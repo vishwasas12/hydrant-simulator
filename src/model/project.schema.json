@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Fire Hydrant Network Simulator project",
+  "type": "object",
+  "required": ["schemaVersion", "name", "nodes", "pipes", "pumps", "settings", "tables", "metersPerUnit", "scenarios"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string" },
+    "metersPerUnit": { "type": "number", "exclusiveMinimum": 0 },
+    "nodes": { "type": "array", "items": { "$ref": "#/definitions/node" } },
+    "pipes": { "type": "array", "items": { "$ref": "#/definitions/pipe" } },
+    "pumps": { "type": "array", "items": { "$ref": "#/definitions/pump" } },
+    "settings": { "$ref": "#/definitions/settings" },
+    "tables": { "$ref": "#/definitions/tables" },
+    "scenarios": { "type": "array", "items": { "$ref": "#/definitions/scenario" } },
+    "baseline": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/scenario" }] },
+    "background": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/background" }] }
+  },
+  "definitions": {
+    "outlet": {
+      "type": "object",
+      "required": ["outlets", "on", "model", "fixedFlowLpm", "nozzleMm", "cd", "hoseLengthM", "hoseDiameterMm", "hoseC", "valveDiameterMm", "valveK", "minPressureBar", "minFlowLpm"],
+      "properties": {
+        "outlets": { "enum": [1, 2] },
+        "on": { "type": "boolean" },
+        "model": { "enum": ["emitter", "fixed"] },
+        "fixedFlowLpm": { "type": "number", "minimum": 0 },
+        "nozzleMm": { "type": "number", "minimum": 0 },
+        "cd": { "type": "number", "minimum": 0 },
+        "hoseLengthM": { "type": "number", "minimum": 0 },
+        "hoseDiameterMm": { "type": "number", "minimum": 0 },
+        "hoseC": { "type": "number", "minimum": 0 },
+        "valveDiameterMm": { "type": "number", "minimum": 0 },
+        "valveK": { "type": "number", "minimum": 0 },
+        "minPressureBar": { "type": "number", "minimum": 0 },
+        "minFlowLpm": { "type": "number", "minimum": 0 }
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "label", "x", "y", "elevationM", "baseDemandLpm", "kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "elevationM": { "type": "number" },
+        "baseDemandLpm": { "type": "number", "minimum": 0 },
+        "kind": { "enum": ["junction", "hydrant", "hoseReel"] },
+        "outlet": { "$ref": "#/definitions/outlet" }
+      }
+    },
+    "fitting": {
+      "type": "object",
+      "required": ["id", "type", "quantity"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "enum": ["elbow90", "elbow45", "longRadiusBend", "teeRun", "teeBranch", "butterflyValve", "gateValve", "nonReturnValve", "reducer", "custom"] },
+        "quantity": { "type": "number", "minimum": 0 },
+        "customMode": { "enum": ["leq", "k"] },
+        "customValue": { "type": "number", "minimum": 0 }
+      }
+    },
+    "pipe": {
+      "type": "object",
+      "required": ["id", "label", "from", "to", "nominalMm", "internalDiameterMm", "lengthM", "lengthManual", "c", "roughnessMm", "fittings", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "nominalMm": { "anyOf": [{ "type": "number" }, { "const": "custom" }] },
+        "internalDiameterMm": { "type": "number" },
+        "lengthM": { "type": "number" },
+        "lengthManual": { "type": "boolean" },
+        "c": { "type": "number" },
+        "roughnessMm": { "type": "number" },
+        "fittings": { "type": "array", "items": { "$ref": "#/definitions/fitting" } },
+        "valves": { "type": "array", "items": { "$ref": "#/definitions/valve" } },
+        "status": { "enum": ["open", "closed"] }
+      }
+    },
+    "valve": {
+      "type": "object",
+      "required": ["id", "label", "type", "position", "status", "forward"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "type": { "enum": ["gate", "butterfly", "nonReturn"] },
+        "position": { "type": "number", "minimum": 0, "maximum": 1 },
+        "status": { "enum": ["open", "closed"] },
+        "forward": { "type": "boolean" }
+      }
+    },
+    "curvePoint": {
+      "type": "object",
+      "required": ["flowLpm", "headM"],
+      "properties": { "flowLpm": { "type": "number" }, "headM": { "type": "number" } }
+    },
+    "pump": {
+      "type": "object",
+      "required": ["id", "label", "nodeId", "curve", "suctionLossM", "waterLevelM"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "nodeId": { "type": "string" },
+        "suctionLossM": { "type": "number" },
+        "waterLevelM": { "type": "number" },
+        "curve": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["threePoint", "table", "constant"] },
+            "points": { "type": "array", "items": { "$ref": "#/definitions/curvePoint" } }
+          }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": ["frictionModel", "fittingMethod", "applyCFactorToFittings", "velocityLimitMs", "kinematicViscosityM2s", "gravity", "mPerBar", "maxIterations", "headToleranceM"],
+      "properties": {
+        "frictionModel": { "enum": ["hazenWilliams", "darcyWeisbach"] },
+        "fittingMethod": { "enum": ["equivalentLength", "kValue"] },
+        "applyCFactorToFittings": { "type": "boolean" },
+        "velocityLimitMs": { "type": "number" },
+        "kinematicViscosityM2s": { "type": "number" },
+        "gravity": { "type": "number" },
+        "mPerBar": { "type": "number" },
+        "maxIterations": { "type": "integer", "minimum": 1 },
+        "headToleranceM": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "tables": {
+      "type": "object",
+      "required": ["material", "fittings", "cFactors"],
+      "properties": {
+        "material": { "type": "object", "required": ["name", "source", "rows"] },
+        "fittings": { "type": "array" },
+        "cFactors": { "type": "array" }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "notes": { "type": "string" },
+        "hydrantOn": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "pipeStatus": { "type": "object", "additionalProperties": { "enum": ["open", "closed"] } },
+        "valveStatus": { "type": "object", "additionalProperties": { "enum": ["open", "closed"] } },
+        "pipeC": { "type": "object", "additionalProperties": { "type": "number" } },
+        "globalC": { "type": "number" }
+      }
+    },
+    "background": {
+      "type": "object",
+      "required": ["dataUrl", "name", "x", "y", "width", "height", "opacity", "visible"]
+    }
+  }
+}
