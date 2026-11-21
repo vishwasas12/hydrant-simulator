@@ -30,7 +30,7 @@ function pointAt(s: number): { x: number; y: number; nx: number; ny: number } {
 const fitting = (id: string, type: FittingType, quantity: number): Fitting => ({ id, type, quantity });
 
 export function seedProject(): Project {
-  const project = emptyProject('Reference yard ring');
+  const project = emptyProject('Example yard ring main');
   // Its fittings are placed by hand below, so the drawing does not add more.
   project.settings.autoFittings = false;
   const nodes: NetworkNode[] = [];

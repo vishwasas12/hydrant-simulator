@@ -47,7 +47,7 @@ export function ManualTab() {
         );
       },
     },
-    { key: 'label', label: 'ID', value: (r) => r.label },
+    { key: 'label', label: 'Outlet', value: (r) => r.label },
     {
       key: 'p',
       label: 'Pressure, bar',
@@ -71,7 +71,7 @@ export function ManualTab() {
       align: 'right',
     },
     { key: 'q', label: 'Flow, LPM', value: (r) => +r.outletFlowLpm.toFixed(1), render: (r) => r.outletFlowLpm.toFixed(1), align: 'right' },
-    { key: 'status', label: 'Check', value: (r) => r.status, render: (r) => <StatusBadge status={r.status} /> },
+    { key: 'status', label: 'Result', value: (r) => r.status, render: (r) => <StatusBadge status={r.status} /> },
   ];
 
   const setAll = (on: boolean) =>

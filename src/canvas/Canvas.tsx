@@ -494,6 +494,17 @@ export function Canvas() {
       const r = pumpNodes.has(n.id) ? 12 : n.kind === 'junction' ? 3.5 : 7.5;
       return { x1: n.x * k - r, y1: n.y * k - r, x2: n.x * k + r, y2: n.y * k + r };
     });
+    // Valve symbols and their labels, drawn below a flat pipe or beside a steep one.
+    for (const spot of valveSpots) {
+      const x = spot.x * k;
+      const y = spot.y * k;
+      taken.push({ x1: x - 9, y1: y - 9, x2: x + 9, y2: y + 9 });
+      if (view.showLabels) {
+        const w = textWidth(spot.valve.label, 10);
+        const flat = Math.abs(Math.sin((spot.angle * Math.PI) / 180)) < 0.7;
+        taken.push(flat ? { x1: x - w / 2, y1: y + 10, x2: x + w / 2, y2: y + 22 } : { x1: x + 12, y1: y - 6, x2: x + 12 + w, y2: y + 6 });
+      }
+    }
     const out = new Map<Id, { block: LabelBlock; lines: { key: string; className: string; text: string }[] }>();
     for (const n of nodes) {
       const r = nodeResults.get(n.id);
@@ -525,7 +536,7 @@ export function Canvas() {
       out.set(n.id, { block, lines });
     }
     return out;
-  }, [nodes, pipes, byId, camera.k, project.pumps, nodeResults, results.ok, view.showLabels, showJunctionLabels, baselineNodes]);
+  }, [nodes, pipes, byId, valveSpots, camera.k, project.pumps, nodeResults, results.ok, view.showLabels, showJunctionLabels, baselineNodes]);
 
   return (
     <div className={`canvas-wrap tool-${tool}`}>
@@ -752,7 +763,23 @@ export function Canvas() {
           />
         )}
       </svg>
-      <Legend pressureRange={pressureRange} velocityMax={velocityMax} />
+      {nodes.length === 0 ? (
+        <div className="canvas-empty" data-testid="canvas-empty">
+          <strong>Draw the hydrant network</strong>
+          <ol>
+            <li>
+              Place hydrants with <kbd>H</kbd> and junctions with <kbd>J</kbd>, then join them with pipes using <kbd>P</kbd>.
+            </li>
+            <li>
+              Mark the pump connection with <kbd>U</kbd> and set its curve.
+            </li>
+            <li>Switch hydrants on with <kbd>T</kbd>, or from the Operation tab below, to see pressures and flows.</li>
+          </ol>
+          <p>To trace a site plan, import it under Background drawing on the right. To start from a worked case, choose Example.</p>
+        </div>
+      ) : (
+        <Legend pressureRange={pressureRange} velocityMax={velocityMax} />
+      )}
       {pathPipes.size > 0 && <div className="canvas-chip">Critical path highlighted</div>}
       {calibration.dialog}
     </div>

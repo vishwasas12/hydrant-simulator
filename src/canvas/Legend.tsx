@@ -66,20 +66,20 @@ export function Legend({
           <circle r="6.5" fill={STATUS.good} stroke="#0a7f0a" strokeWidth="1.5" />
           <path d="M -3 0.2 L -0.8 2.5 L 3.2 -2.3" fill="none" stroke="#fff" strokeWidth="1.6" />
         </svg>
-        <span>Open, passes</span>
+        <span>Flowing, meets requirement</span>
       </div>
       <div className="legend-row">
         <svg width="18" height="18" viewBox="-9 -9 18 18" aria-hidden="true">
           <circle r="6.5" fill={STATUS.critical} stroke="#a22828" strokeWidth="1.5" />
           <path d="M -2.5 -2.5 L 2.5 2.5 M -2.5 2.5 L 2.5 -2.5" stroke="#fff" strokeWidth="1.6" />
         </svg>
-        <span>Open, fails</span>
+        <span>Flowing, below requirement</span>
       </div>
       <div className="legend-row">
         <svg width="18" height="18" viewBox="-9 -9 18 18" aria-hidden="true">
           <circle r="6.5" fill="#fcfcfb" stroke="#52514e" strokeWidth="1.5" />
         </svg>
-        <span>Off</span>
+        <span>Closed</span>
       </div>
       <div className="legend-row">
         <svg width="18" height="18" viewBox="-9 -9 18 18" aria-hidden="true">

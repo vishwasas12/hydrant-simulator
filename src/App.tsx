@@ -8,6 +8,7 @@ import { Toolbar, ViewBar } from './panels/Toolbar';
 import { BottomPanel } from './panels/BottomPanel';
 import { ReportDialog } from './panels/ReportDialog';
 import { useCapacity } from './analysis/useCapacity';
+import { COMPANY, PRODUCT } from './report/company';
 import { buildReportHtml } from './report/report';
 import { networkKey, resultsFor, useStore, type Tool } from './state/store';
 
@@ -44,6 +45,10 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const { results, ms } = resultsFor(project);
+
+  useEffect(() => {
+    document.title = `${project.name} · ${COMPANY} ${PRODUCT}`;
+  }, [project.name]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -131,8 +136,10 @@ export function App() {
     }
   };
 
-  const errors = results.issues.filter((i) => i.severity === 'error');
-  const warnings = results.issues.filter((i) => i.severity === 'warning');
+  // An empty drawing has nothing wrong with it yet, so it shows no solver errors.
+  const issues = project.nodes.length === 0 ? [] : results.issues;
+  const errors = issues.filter((i) => i.severity === 'error');
+  const warnings = issues.filter((i) => i.severity === 'warning');
 
   return (
     <div className="app">
@@ -162,11 +169,12 @@ export function App() {
           </button>
           <button
             className="btn"
+            title="Open a worked example: a yard ring main with hydrants and hose reels"
             onClick={() => {
-              if (confirm('Load the reference project? Unsaved changes to this one will be lost.')) loadProject(seedProject());
+              if (confirm('Open the example project? Unsaved changes to this one will be lost.')) loadProject(seedProject());
             }}
           >
-            Reference
+            Example
           </button>
           <button className="btn" onClick={() => fileRef.current?.click()} data-testid="open">
             Open
@@ -204,9 +212,17 @@ export function App() {
       </div>
 
       <footer className="statusbar" data-testid="statusbar">
-        {results.ok ? (
-          <span className="good" data-testid="solve-status">
-            ✓ Solved in {results.iterations} iterations, residual {results.headResidualM.toExponential(1)} m, {ms.toFixed(1)} ms
+        {project.nodes.length === 0 ? (
+          <span className="muted-text" data-testid="solve-status">
+            New project. Draw the network to start the analysis.
+          </span>
+        ) : results.ok ? (
+          <span
+            className="good"
+            data-testid="solve-status"
+            title={`Head residual ${results.headResidualM.toExponential(1)} m, solved in ${ms.toFixed(1)} ms`}
+          >
+            ✓ Solved · {results.iterations} iterations
           </span>
         ) : (
           <span className="bad" data-testid="solve-status">✕ Not solved</span>

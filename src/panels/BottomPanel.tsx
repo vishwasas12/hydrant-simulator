@@ -10,13 +10,13 @@ import { HydrantsTab, NodesTab, PipesTab } from './ResultsTables';
 import { ScenariosTab } from './ScenariosTab';
 
 const TABS: { id: BottomTab; label: string; view: () => ReactNode }[] = [
-  { id: 'manual', label: 'Manual', view: () => <ManualTab /> },
+  { id: 'manual', label: 'Operation', view: () => <ManualTab /> },
   { id: 'nodes', label: 'Nodes', view: () => <NodesTab /> },
   { id: 'pipes', label: 'Pipes', view: () => <PipesTab /> },
   { id: 'hydrants', label: 'Hydrants', view: () => <HydrantsTab /> },
   { id: 'path', label: 'Critical path', view: () => <CriticalPathTab /> },
   { id: 'charts', label: 'Charts', view: () => <ChartsTab /> },
-  { id: 'requirement', label: 'Requirement check', view: () => <RequirementTab /> },
+  { id: 'requirement', label: 'Individual check', view: () => <RequirementTab /> },
   { id: 'capacity', label: 'Capacity', view: () => <CapacityTab /> },
   { id: 'scenarios', label: 'Scenarios', view: () => <ScenariosTab /> },
   { id: 'assumptions', label: 'Assumptions', view: () => <AssumptionsTab /> },

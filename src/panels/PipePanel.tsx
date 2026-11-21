@@ -301,7 +301,7 @@ export function PipePanel({ pipe }: { pipe: Pipe }) {
             <dd>{r.headLossM.toFixed(3)} m</dd>
             <dt>Loss per 100 m</dt>
             <dd>{r.lossPer100M.toFixed(2)} m</dd>
-            <dt>L_eq</dt>
+            <dt>Equivalent length</dt>
             <dd>{r.equivalentLengthM.toFixed(1)} m</dd>
           </dl>
         </Section>

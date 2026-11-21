@@ -4,13 +4,13 @@ import { useResults, useStore } from '../state/store';
 import { DataTable, type Column } from './DataTable';
 
 export const pathColumns: Column<CriticalPathSegment>[] = [
-  { key: 'seg', label: 'Segment', value: (r) => `${r.fromLabel} → ${r.toLabel}` },
+  { key: 'seg', label: 'From → to', value: (r) => `${r.fromLabel} → ${r.toLabel}` },
   { key: 'pipe', label: 'Pipe', value: (r) => r.label },
-  { key: 'l', label: 'L, m', value: (r) => +r.lengthM.toFixed(1), render: (r) => r.lengthM.toFixed(1), align: 'right' },
-  { key: 'leq', label: 'L_eq, m', value: (r) => +r.equivalentLengthM.toFixed(1), render: (r) => r.equivalentLengthM.toFixed(1), align: 'right' },
-  { key: 'q', label: 'Q, LPM', value: (r) => +r.flowLpm.toFixed(1), render: (r) => r.flowLpm.toFixed(1), align: 'right' },
-  { key: 'hf', label: 'hf, m', value: (r) => +r.headLossM.toFixed(3), render: (r) => r.headLossM.toFixed(3), align: 'right' },
-  { key: 'p', label: 'Pressure after, bar', value: (r) => +r.pressureAfterBar.toFixed(3), render: (r) => r.pressureAfterBar.toFixed(2), align: 'right' },
+  { key: 'l', label: 'Length, m', value: (r) => +r.lengthM.toFixed(1), render: (r) => r.lengthM.toFixed(1), align: 'right' },
+  { key: 'leq', label: 'Equiv. length, m', value: (r) => +r.equivalentLengthM.toFixed(1), render: (r) => r.equivalentLengthM.toFixed(1), align: 'right' },
+  { key: 'q', label: 'Flow, LPM', value: (r) => +r.flowLpm.toFixed(1), render: (r) => r.flowLpm.toFixed(1), align: 'right' },
+  { key: 'hf', label: 'Head loss, m', value: (r) => +r.headLossM.toFixed(3), render: (r) => r.headLossM.toFixed(3), align: 'right' },
+  { key: 'p', label: 'Pressure at end, bar', value: (r) => +r.pressureAfterBar.toFixed(3), render: (r) => r.pressureAfterBar.toFixed(2), align: 'right' },
 ];
 
 export function CriticalPathTab() {

@@ -68,7 +68,7 @@ export function ProjectPanel() {
                 ? `${results.nodes.find((n) => n.id === results.system.criticalNodeId)?.label} · ${results.system.criticalPressureBar?.toFixed(2)} bar`
                 : 'None open'}
             </dd>
-            <dt>Open outlets</dt>
+            <dt>Flowing outlets</dt>
             <dd>
               {results.system.passingOutlets} pass, {results.system.failingOutlets} fail
             </dd>
@@ -116,7 +116,7 @@ export function ProjectPanel() {
             : 'Off: only the fittings entered on each pipe are counted.'}
         </p>
         <div className="field row">
-          <span className="field-label">Scale L_eq for C ≠ 120 (NFPA 13)</span>
+          <span className="field-label">Adjust equivalent lengths for C ≠ 120 (NFPA 13)</span>
           <Toggle
             label="Scale equivalent lengths for C other than 120"
             checked={settings.applyCFactorToFittings}

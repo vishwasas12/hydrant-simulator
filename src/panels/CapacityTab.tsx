@@ -9,9 +9,9 @@ export const comboLabels = (r: CapacityResult, c: Combo): string =>
 
 export function comboColumns(r: CapacityResult): Column<Combo>[] {
   return [
-    { key: 'k', label: 'Open', value: (c) => c.count, align: 'right' },
+    { key: 'k', label: 'Flowing', value: (c) => c.count, align: 'right' },
     { key: 'members', label: 'Hydrants', value: (c) => comboLabels(r, c) },
-    { key: 'status', label: 'Check', value: (c) => (c.pass ? 'pass' : 'fail'), render: (c) => <StatusBadge status={c.pass ? 'pass' : 'fail'} /> },
+    { key: 'status', label: 'Result', value: (c) => (c.pass ? 'pass' : 'fail'), render: (c) => <StatusBadge status={c.pass ? 'pass' : 'fail'} /> },
     {
       key: 'margin',
       label: 'Margin',
@@ -19,10 +19,10 @@ export function comboColumns(r: CapacityResult): Column<Combo>[] {
       render: (c) => `${(c.margin * 100).toFixed(1)} %`,
       align: 'right',
     },
-    { key: 'crit', label: 'Critical', value: (c) => r.hydrants[c.critical].label },
+    { key: 'crit', label: 'Critical hydrant', value: (c) => r.hydrants[c.critical].label },
     { key: 'q', label: 'Pump flow, LPM', value: (c) => +c.pumpFlowLpm.toFixed(0), align: 'right' },
     { key: 'h', label: 'Pump head, m', value: (c) => +c.pumpHeadM.toFixed(1), render: (c) => c.pumpHeadM.toFixed(1), align: 'right' },
-    { key: 'why', label: 'Fails because', value: (c) => c.reason },
+    { key: 'why', label: 'Reason', value: (c) => c.reason },
   ];
 }
 
@@ -82,7 +82,7 @@ export function CapacityTab() {
     <div className="table-wrap" data-testid="capacity">
       <div className="table-tools">
         <label className="check">
-          Worst case for k =
+          Worst case for groups of
           <input
             className="k-input"
             type="number"
@@ -95,7 +95,7 @@ export function CapacityTab() {
         </label>
         <label className="check">
           <input type="checkbox" checked={respect} onChange={(e) => setRespect(e.target.checked)} data-testid="capacity-respect" />
-          Fail if pump runs past its last curve point
+          Fail if the pump runs beyond its curve
         </label>
         {running ? (
           <button type="button" className="btn" onClick={cancel} data-testid="capacity-cancel">
@@ -114,8 +114,8 @@ export function CapacityTab() {
         )}
         <span className="muted">
           {hydrantCount <= 15
-            ? `${hydrantCount} hydrants: exhaustive, ${Math.max(2 ** hydrantCount - 1, 0).toLocaleString()} combinations.`
-            : `${hydrantCount} hydrants: greedy search, plus exact enumeration of small combination sizes.`}
+            ? `${hydrantCount} hydrants: every combination is checked (${Math.max(2 ** hydrantCount - 1, 0).toLocaleString()} in all).`
+            : `${hydrantCount} hydrants: small groups are checked in full; larger groups follow the least favourable combinations.`}
         </span>
       </div>
 
@@ -137,25 +137,25 @@ export function CapacityTab() {
           <div className="stats">
             <Stat
               testId="stat-max"
-              label="Most hydrants open at once"
+              label="Most hydrants flowing together"
               value={String(result.maxSimultaneous)}
-              note={`${result.maxExact || result.method === 'exhaustive' ? 'Exact' : 'At least, from greedy search'}${result.bestCombo ? `: ${comboLabels(result, result.bestCombo)}` : ''}`}
+              note={`${result.maxExact || result.method === 'exhaustive' ? 'Every combination checked' : 'Best combination found'}${result.bestCombo ? `: ${comboLabels(result, result.bestCombo)}` : ''}`}
             />
             <Stat
               testId="stat-guaranteed"
               label="Any combination of up to"
               value={String(result.guaranteedK)}
-              note={result.guaranteedExact ? 'Exact. Every combination of this size passes' : 'Upper estimate from greedy worst case'}
+              note={result.guaranteedExact ? 'Every combination of this size passes' : 'Estimated from the least favourable combinations'}
             />
             <Stat
               testId="stat-worst"
-              label={`Worst case, k = ${result.chosenK}`}
+              label={`Worst group of ${result.chosenK}`}
               value={result.worstForK ? `${result.worstForK.pass ? '✓' : '✕'} ${(result.worstForK.margin * 100).toFixed(1)} %` : '–'}
-              note={result.worstForK ? `${comboLabels(result, result.worstForK)}${result.worstForKExact ? '' : ' (greedy estimate)'}` : undefined}
+              note={result.worstForK ? `${comboLabels(result, result.worstForK)}${result.worstForKExact ? '' : ' (estimated)'}` : undefined}
             />
             <Stat
               testId="stat-farthest"
-              label={`${result.chosenK} farthest together`}
+              label={`${result.chosenK} most remote together`}
               value={result.kFarthest ? `${result.kFarthest.pass ? '✓' : '✕'} ${(result.kFarthest.margin * 100).toFixed(1)} %` : '–'}
               note={result.kFarthest ? comboLabels(result, result.kFarthest) : undefined}
             />

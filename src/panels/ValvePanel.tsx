@@ -97,7 +97,7 @@ export function ValvePanel({ pipe, valve }: { pipe: Pipe; valve: PipeValve }) {
       <Section title="Hydraulics">
         <p className="muted">
           Closed, it shuts pipe {pipe.label}. Open, it adds the {row?.name.toLowerCase() ?? 'valve'} loss from the fitting
-          table{leq !== null ? `: L_eq ${leq.toFixed(1)} m at ${size} mm` : ''}.
+          table{leq !== null ? `: equivalent length ${leq.toFixed(1)} m at ${size} NB` : ''}.
           {valve.type === 'nonReturn' ? ' It also stops any flow in the reverse direction.' : ''}
         </p>
         {otherClosed && valve.status === 'open' && <p className="warn">▲ The pipe is already shut by its status or another valve.</p>}

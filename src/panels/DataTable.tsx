@@ -158,6 +158,6 @@ export function DataTable<T>({
 export function StatusBadge({ status }: { status: 'pass' | 'fail' | 'off' | null }) {
   if (status === 'pass') return <span className="badge pass">✓ Pass</span>;
   if (status === 'fail') return <span className="badge fail">✕ Fail</span>;
-  if (status === 'off') return <span className="badge off">Off</span>;
+  if (status === 'off') return <span className="badge off">Closed</span>;
   return <span className="muted">–</span>;
 }

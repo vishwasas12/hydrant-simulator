@@ -12,9 +12,9 @@ const columns: Column<Assumption>[] = [
   { key: 'source', label: 'Source', value: (r) => r.source },
   {
     key: 'over',
-    label: 'Overridden',
+    label: 'Changed',
     value: (r) => (r.overridden ? 'Yes' : ''),
-    render: (r) => (r.overridden ? <span className="badge override">● Overridden</span> : ''),
+    render: (r) => (r.overridden ? <span className="badge override">● Changed from default</span> : ''),
   },
 ];
 

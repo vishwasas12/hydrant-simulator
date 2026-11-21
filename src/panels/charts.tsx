@@ -36,6 +36,20 @@ export const CHART = {
 };
 
 const TICK = { fontSize: 11, fill: CHART.muted };
+
+/**
+ * A round axis maximum with evenly spaced ticks from zero, so an axis reads
+ * 0, 1000 … 5000 rather than stopping at the largest data value.
+ */
+export function niceAxis(max: number, target = 5): { max: number; ticks: number[] } {
+  if (!(max > 0) || !Number.isFinite(max)) return { max: 1, ticks: [0, 1] };
+  const raw = max / target;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw - 1e-12) ?? 10 * magnitude;
+  const top = Math.ceil(max / step - 1e-9) * step;
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => +(i * step).toPrecision(12));
+  return { max: +top.toPrecision(12), ticks };
+}
 const TOOLTIP_STYLE = { fontSize: 12, border: `1px solid ${CHART.axis}`, borderRadius: 3 };
 
 export function curveSamples(fit: FittedCurve, extendToLpm = 0, count = 41): { flow: number; head: number }[] {
@@ -56,6 +70,8 @@ export function PumpMiniChart({
   operating: { flowLpm: number; headM: number } | null;
 }) {
   const data = useMemo(() => curveSamples(fit, operating?.flowLpm ?? 0), [fit, operating?.flowLpm]);
+  const x = niceAxis(Math.max(...data.map((d) => d.flow)), 4);
+  const y = niceAxis(Math.max(...data.map((d) => d.head), operating?.headM ?? 0), 4);
   return (
     <div className="mini-chart" data-testid="pump-mini-chart">
       <ResponsiveContainer width="100%" height={150}>
@@ -64,12 +80,14 @@ export function PumpMiniChart({
           <XAxis
             dataKey="flow"
             type="number"
-            domain={[0, 'dataMax']}
+            domain={[0, x.max]}
+            ticks={x.ticks}
+            interval={0}
             tick={{ fontSize: 10, fill: CHART.muted }}
             stroke={CHART.axis}
             label={{ value: 'Flow, LPM', position: 'insideBottom', offset: -6, fontSize: 10, fill: CHART.muted }}
           />
-          <YAxis width={36} tick={{ fontSize: 10, fill: CHART.muted }} stroke={CHART.axis} domain={[0, 'auto']} />
+          <YAxis width={36} tick={{ fontSize: 10, fill: CHART.muted }} stroke={CHART.axis} domain={[0, y.max]} ticks={y.ticks} interval={0} />
           <Tooltip
             formatter={(v: number) => [`${v} m`, 'Head']}
             labelFormatter={(l) => `${l} LPM`}
@@ -143,13 +161,17 @@ export function PumpSystemChart({
   width?: number;
   height?: number;
 }) {
+  const x = niceAxis(Math.max(...data.rows.map((r) => r.flow)));
+  const y = niceAxis(Math.max(...data.rows.flatMap((r) => [r.pump, r.system ?? 0]), data.operating?.headM ?? 0));
   const chart = (
     <LineChart width={width} height={height} data={data.rows} margin={{ top: 10, right: 18, bottom: 18, left: 4 }}>
       <CartesianGrid stroke={CHART.grid} vertical={false} />
       <XAxis
         dataKey="flow"
         type="number"
-        domain={[0, 'dataMax']}
+        domain={[0, x.max]}
+        ticks={x.ticks}
+        interval={0}
         tick={TICK}
         stroke={CHART.axis}
         label={{ value: 'Flow, LPM', position: 'insideBottom', offset: -8, fontSize: 11, fill: CHART.muted }}
@@ -158,7 +180,9 @@ export function PumpSystemChart({
         tick={TICK}
         stroke={CHART.axis}
         width={44}
-        domain={[0, 'auto']}
+        domain={[0, y.max]}
+        ticks={y.ticks}
+        interval={0}
         label={{ value: 'Head, m', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: CHART.muted }}
       />
       {width === undefined && (
@@ -224,13 +248,17 @@ export function PressureProfileChart({
   width?: number;
   height?: number;
 }) {
+  const x = niceAxis(Math.max(...data.rows.map((r) => r.distance)));
+  const y = niceAxis(Math.max(...data.rows.map((r) => r.pressure), data.requiredBar ?? 0));
   const chart = (
     <LineChart width={width} height={height} data={data.rows} margin={{ top: 10, right: 18, bottom: 18, left: 4 }}>
       <CartesianGrid stroke={CHART.grid} vertical={false} />
       <XAxis
         dataKey="distance"
         type="number"
-        domain={[0, 'dataMax']}
+        domain={[0, x.max]}
+        ticks={x.ticks}
+        interval={0}
         tick={TICK}
         stroke={CHART.axis}
         label={{ value: 'Distance along path, m', position: 'insideBottom', offset: -8, fontSize: 11, fill: CHART.muted }}
@@ -239,7 +267,9 @@ export function PressureProfileChart({
         tick={TICK}
         stroke={CHART.axis}
         width={44}
-        domain={[0, 'auto']}
+        domain={[0, y.max]}
+        ticks={y.ticks}
+        interval={0}
         label={{ value: 'Pressure, bar', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: CHART.muted }}
       />
       {width === undefined && (
