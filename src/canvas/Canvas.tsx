@@ -18,6 +18,7 @@ import { criticalPath, type NodeResult, type PipeResult } from '../solver';
 import { useCalibration } from './calibration';
 import { diameterClass, sequentialColor, STATUS } from './colors';
 import { FittingIcon } from './FittingIcon';
+import { placeNodeLabels, textWidth, type Box, type LabelBlock, type Segment } from './labelPlacement';
 import { Legend } from './Legend';
 
 interface Point {
@@ -76,21 +77,6 @@ export function Canvas() {
     [view.showCriticalPath, project, results],
   );
   const pathPipes = useMemo(() => new Set(path?.pipeIds ?? []), [path]);
-  const feedAbove = useMemo(() => {
-    const out = new Set<Id>();
-    for (const n of nodes) {
-      if (n.kind === 'junction') continue;
-      const neighbours = pipes
-        .filter((p) => p.from === n.id || p.to === n.id)
-        .map((p) => byId.get(p.from === n.id ? p.to : p.from))
-        .filter((x): x is NetworkNode => !!x);
-      if (neighbours.length === 1 && neighbours[0].y < n.y && Math.abs(neighbours[0].y - n.y) >= Math.abs(neighbours[0].x - n.x)) {
-        out.add(n.id);
-      }
-    }
-    return out;
-  }, [nodes, pipes, byId]);
-
   const toScreen = useCallback(
     (p: Point): Point => ({ x: p.x * camera.k + camera.tx, y: p.y * camera.k + camera.ty }),
     [camera],
@@ -493,6 +479,54 @@ export function Canvas() {
   const showJunctionLabels = camera.k >= 2.2;
   const bg = project.background;
 
+  // Name, pressure and baseline change beside each node, placed clear of the
+  // pipes. Worked out at the current zoom only, since panning does not change it.
+  const nodeLabels = useMemo(() => {
+    const k = camera.k;
+    const segments: Segment[] = [];
+    for (const p of pipes) {
+      const a = byId.get(p.from);
+      const b = byId.get(p.to);
+      if (a && b) segments.push({ a: { x: a.x * k, y: a.y * k }, b: { x: b.x * k, y: b.y * k } });
+    }
+    const pumpNodes = new Set(project.pumps.map((p) => p.nodeId));
+    const taken: Box[] = nodes.map((n) => {
+      const r = pumpNodes.has(n.id) ? 12 : n.kind === 'junction' ? 3.5 : 7.5;
+      return { x1: n.x * k - r, y1: n.y * k - r, x2: n.x * k + r, y2: n.y * k + r };
+    });
+    const out = new Map<Id, { block: LabelBlock; lines: { key: string; className: string; text: string }[] }>();
+    for (const n of nodes) {
+      const r = nodeResults.get(n.id);
+      const isPump = pumpNodes.has(n.id);
+      const isOutlet = n.kind !== 'junction';
+      const lines: { key: string; className: string; text: string }[] = [];
+      if (view.showLabels && (isOutlet || isPump || showJunctionLabels)) {
+        lines.push({ key: 'name', className: 'node-label', text: isPump ? `${n.label} (pump)` : n.label });
+      }
+      if (results.ok && isOutlet && n.outlet?.on && r?.pressureBar != null && view.showLabels) {
+        lines.push({ key: 'value', className: 'node-value', text: `${r.pressureBar.toFixed(2)} bar` });
+      }
+      const delta =
+        baselineNodes && r?.pressureBar != null && (isOutlet || showJunctionLabels)
+          ? r.pressureBar - (baselineNodes.get(n.id)?.pressureBar ?? r.pressureBar)
+          : null;
+      if (delta !== null && Math.abs(delta) >= 0.005) {
+        lines.push({
+          key: 'delta',
+          className: `node-delta ${delta > 0 ? 'up' : 'down'}`,
+          text: `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}`,
+        });
+      }
+      if (lines.length === 0) continue;
+      const widths = lines.map((l) => textWidth(l.text, l.key === 'name' ? 11 : 10.5));
+      const block = placeNodeLabels({ x: n.x * k, y: n.y * k }, widths, segments, taken, isPump ? 16 : 11);
+      taken.push(block.box);
+      // Relative to the node, which is how the labels are drawn.
+      out.set(n.id, { block, lines });
+    }
+    return out;
+  }, [nodes, pipes, byId, camera.k, project.pumps, nodeResults, results.ok, view.showLabels, showJunctionLabels, baselineNodes]);
+
   return (
     <div className={`canvas-wrap tool-${tool}`}>
       <svg
@@ -662,17 +696,11 @@ export function Canvas() {
             (selection?.type === 'node' && selection.id === n.id) ||
             (selection?.type === 'pump' && project.pumps.some((p) => p.id === selection.id && p.nodeId === n.id));
           const isOutlet = n.kind !== 'junction';
-          const showLabel = view.showLabels && (isOutlet || isPump || showJunctionLabels);
           const on = n.outlet?.on;
           const status = results.ok ? r?.status : null;
           const fill = !on ? '#fcfcfb' : status === 'pass' ? STATUS.good : status === 'fail' ? STATUS.critical : '#e1e0d9';
           const stroke = !on ? '#52514e' : status === 'pass' ? '#0a7f0a' : status === 'fail' ? '#a22828' : '#52514e';
-          const delta =
-            baselineNodes && r?.pressureBar != null && (isOutlet || showJunctionLabels)
-              ? r.pressureBar - (baselineNodes.get(n.id)?.pressureBar ?? r.pressureBar)
-              : null;
-          // Keep text off the pipe: outlets fed from above are labelled below.
-          const labelY = feedAbove.has(n.id) ? 20 : -8;
+          const labels = nodeLabels.get(n.id);
           return (
             <g key={n.id} transform={`translate(${s.x} ${s.y})`} data-node={n.label}>
               {selected && <circle r={14} fill="var(--select)" opacity={0.25} />}
@@ -693,22 +721,11 @@ export function Canvas() {
                   <path d="M -5 -6.5 L 7.5 0 L -5 6.5 Z" fill="#fcfcfb" />
                 </g>
               )}
-              {showLabel && (
-                <text className="node-label" x={isPump ? 16 : 11} y={labelY}>
-                  {isPump ? `${n.label} (pump)` : n.label}
+              {labels?.lines.map((line, i) => (
+                <text key={line.key} className={line.className} x={labels.block.x} y={labels.block.ys[i]} textAnchor={labels.block.anchor}>
+                  {line.text}
                 </text>
-              )}
-              {results.ok && isOutlet && on && r?.pressureBar != null && view.showLabels && (
-                <text className="node-value" x={11} y={labelY + 13}>
-                  {r.pressureBar.toFixed(2)} bar
-                </text>
-              )}
-              {delta !== null && Math.abs(delta) >= 0.005 && (
-                <text className={`node-delta ${delta > 0 ? 'up' : 'down'}`} x={11} y={labelY + 26}>
-                  {delta > 0 ? '+' : '−'}
-                  {Math.abs(delta).toFixed(2)}
-                </text>
-              )}
+              ))}
             </g>
           );
         })}

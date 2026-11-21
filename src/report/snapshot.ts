@@ -1,27 +1,13 @@
 import { diameterClass, STATUS } from '../canvas/colors';
+import { overlapArea, placeNodeLabels, segmentHitsBox, textWidth, type Box, type LabelBlock, type Segment } from '../canvas/labelPlacement';
 import type { Project } from '../model/types';
 import type { CriticalPath, SolveResults } from '../solver';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
 
-interface Box {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-/** Rough width of sans-serif text, enough to keep labels apart. */
-const textWidth = (text: string, fontSize: number): number => text.length * fontSize * 0.6;
-
-const overlapArea = (box: Box, taken: Box[]): number =>
-  taken.reduce(
-    (sum, t) => sum + Math.max(0, Math.min(box.x2, t.x2) - Math.max(box.x1, t.x1)) * Math.max(0, Math.min(box.y2, t.y2) - Math.max(box.y1, t.y1)),
-    0,
-  );
-
-const isClear = (box: Box, taken: Box[]): boolean => overlapArea(box, taken) === 0;
+/** A white outline behind text, so it stays readable where it meets a line. */
+const HALO = 'stroke="#fff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"';
 
 /** Static SVG of the network for the report, coloured by pipe size. */
 export function networkSnapshot(
@@ -46,6 +32,7 @@ export function networkSnapshot(
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const nodeResults = new Map(results.nodes.map((n) => [n.id, n]));
   const pathPipes = new Set(path?.pipeIds ?? []);
+  const isPumpNode = (id: string) => project.pumps.some((p) => p.nodeId === id);
   const parts: string[] = [];
 
   if (background && background.visible) {
@@ -61,31 +48,28 @@ export function networkSnapshot(
       parts.push(`<line x1="${sx(a.x)}" y1="${sy(a.y)}" x2="${sx(b.x)}" y2="${sy(b.y)}" stroke="#f7c948" stroke-width="12" stroke-linecap="round"/>`);
     }
   }
+  const segments: (Segment & { pipeId: string })[] = [];
   for (const p of pipes) {
     const a = byId.get(p.from);
     const b = byId.get(p.to);
     if (!a || !b) continue;
+    segments.push({ a: { x: sx(a.x), y: sy(a.y) }, b: { x: sx(b.x), y: sy(b.y) }, pipeId: p.id });
     const cls = diameterClass(p);
     const closed = p.status === 'closed' || (p.valves ?? []).some((v) => v.status === 'closed');
     parts.push(
       `<line x1="${sx(a.x)}" y1="${sy(a.y)}" x2="${sx(b.x)}" y2="${sy(b.y)}" stroke="${closed ? STATUS.muted : cls.color}" stroke-width="${cls.width}" stroke-linecap="round"${closed ? ' stroke-dasharray="7 6"' : ''}/>`,
     );
   }
-  // Label placement. Junction and pipe labels let the drawing be read against
-  // the schedules, so each takes the first spot clear of labels already placed.
+
+  // Label placement. Node markers and valves come first, then hydrant and pump
+  // labels, then junction and pipe labels, each clear of the pipes and of what
+  // is already placed.
   const taken: Box[] = [];
-  const isPumpNode = (id: string) => project.pumps.some((p) => p.nodeId === id);
   for (const n of nodes) {
     const x = sx(n.x);
     const y = sy(n.y);
     const r = isPumpNode(n.id) ? 11 : n.kind === 'junction' ? 3.5 : 7;
     taken.push({ x1: x - r, y1: y - r, x2: x + r, y2: y + r });
-    if (n.kind !== 'junction' || isPumpNode(n.id)) {
-      const text = isPumpNode(n.id) ? `${n.label} (pump)` : n.label;
-      taken.push({ x1: x + 10, y1: y - 17, x2: x + 10 + textWidth(text, 11), y2: y - 6 });
-      const r = nodeResults.get(n.id);
-      if (n.outlet?.on && r?.pressureBar != null) taken.push({ x1: x + 10, y1: y - 3, x2: x + 10 + 9 * 6, y2: y + 7 });
-    }
   }
   for (const p of pipes) {
     const a = byId.get(p.from);
@@ -98,28 +82,35 @@ export function networkSnapshot(
       taken.push({ x1: x - 8, y1: y - 8, x2: x + 8, y2: y + 8 }, { x1: x - w / 2, y1: y - 18, x2: x + w / 2, y2: y - 9 });
     }
   }
-  const junctionLabels: string[] = [];
+  const nodeLabels: string[] = [];
+  const label = (x: number, block: LabelBlock, line: number, attrs: string, text: string) =>
+    `<text x="${(x + block.x).toFixed(1)}" y="${block.ys[line].toFixed(1)}" text-anchor="${block.anchor}" ${attrs} ${HALO}>${esc(text)}</text>`;
+  for (const n of nodes) {
+    if (n.kind === 'junction' && !isPumpNode(n.id)) continue;
+    const x = sx(n.x);
+    const y = sy(n.y);
+    const r = nodeResults.get(n.id);
+    const name = isPumpNode(n.id) ? `${n.label} (pump)` : n.label;
+    const pressure = n.outlet?.on && r?.pressureBar != null ? `${r.pressureBar.toFixed(2)} bar` : null;
+    const widths = [textWidth(name, 11), ...(pressure ? [textWidth(pressure, 10)] : [])];
+    const block = placeNodeLabels({ x, y }, widths, segments, taken, isPumpNode(n.id) ? 15 : 11);
+    taken.push(block.box);
+    const at = { ...block, ys: block.ys.map((v) => v + y) };
+    nodeLabels.push(label(x, at, 0, 'font-size="11" font-family="sans-serif" fill="#1c1b19"', name));
+    if (pressure) nodeLabels.push(label(x, at, 1, 'font-size="10" font-family="monospace" font-weight="600" fill="#3d3c39"', pressure));
+  }
   for (const n of nodes) {
     if (n.kind !== 'junction' || isPumpNode(n.id)) continue;
     const x = sx(n.x);
     const y = sy(n.y);
-    const w = textWidth(n.label, 9.5);
-    const spots = [
-      [x + 6, y - 6],
-      [x + 6, y + 14],
-      [x - 6 - w, y - 6],
-      [x - 6 - w, y + 14],
-    ];
-    const boxOf = ([tx, ty]: number[]): Box => ({ x1: tx, y1: ty - 9, x2: tx + w, y2: ty + 1 });
-    // First clear spot, otherwise the one that covers the least.
-    const spot =
-      spots.find((s) => isClear(boxOf(s), taken)) ??
-      spots.reduce((best, s) => (overlapArea(boxOf(s), taken) < overlapArea(boxOf(best), taken) ? s : best));
-    taken.push(boxOf(spot));
-    junctionLabels.push(
-      `<text x="${spot[0].toFixed(1)}" y="${spot[1].toFixed(1)}" font-size="9.5" font-family="sans-serif" font-weight="600" fill="#3d3c39">${esc(n.label)}</text>`,
+    const block = placeNodeLabels({ x, y }, [textWidth(n.label, 9.5)], segments, taken, 6);
+    taken.push(block.box);
+    nodeLabels.push(
+      label(x, { ...block, ys: block.ys.map((v) => v + y) }, 0, 'font-size="9.5" font-family="sans-serif" font-weight="600" fill="#3d3c39"', n.label),
     );
   }
+
+  // Pipe labels, so the drawing can be read against the pipe tables.
   for (const p of pipes) {
     const a = byId.get(p.from);
     const b = byId.get(p.to);
@@ -136,6 +127,7 @@ export function networkSnapshot(
     // Half extents of the rotated text, 8 px tall.
     const hx = (Math.abs(Math.cos(rad)) * w) / 2 + Math.abs(Math.sin(rad)) * 4;
     const hy = (Math.abs(Math.sin(rad)) * w) / 2 + Math.abs(Math.cos(rad)) * 4;
+    const others = segments.filter((s) => s.pipeId !== p.id);
     let placed: { x: number; y: number; box: Box } | null = null;
     for (const t of [0.5, 0.35, 0.65, 0.25, 0.75]) {
       // Baseline 7 px off the line on the upper side, or 13 px on the lower side.
@@ -145,7 +137,7 @@ export function networkSnapshot(
         const cx = x + nx * 3;
         const cy = y + ny * 3;
         const box = { x1: cx - hx, y1: cy - hy, x2: cx + hx, y2: cy + hy };
-        if (isClear(box, taken)) {
+        if (overlapArea(box, taken) === 0 && !others.some((s) => segmentHitsBox(s.a, s.b, box))) {
           placed = { x, y, box };
           break;
         }
@@ -159,6 +151,7 @@ export function networkSnapshot(
       `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="8.5" font-family="sans-serif" text-anchor="middle" fill="#76746e" transform="rotate(${angle.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})">${esc(p.label)}</text>`,
     );
   }
+
   for (const p of pipes) {
     const a = byId.get(p.from);
     const b = byId.get(p.to);
@@ -174,17 +167,16 @@ export function networkSnapshot(
           : `<path d="M -7 -5.5 L 7 5.5 L 7 -5.5 L -7 5.5 Z" fill="${fill}" stroke="#1c1b19" stroke-width="1.4"/>`;
       const turn = v.type === 'nonReturn' && !v.forward ? 180 : 0;
       parts.push(`<g transform="translate(${x} ${y}) rotate(${angle + turn})">${shape}</g>`);
-      parts.push(`<text x="${x}" y="${y - 10}" font-size="9" font-family="sans-serif" text-anchor="middle" fill="#1c1b19">${esc(v.label)}</text>`);
+      parts.push(`<text x="${x}" y="${y - 10}" font-size="9" font-family="sans-serif" text-anchor="middle" fill="#1c1b19" ${HALO}>${esc(v.label)}</text>`);
     }
   }
   for (const n of nodes) {
     const x = sx(n.x);
     const y = sy(n.y);
     const r = nodeResults.get(n.id);
-    const isPump = project.pumps.some((p) => p.nodeId === n.id);
     const on = n.outlet?.on;
     const fill = !on ? '#ffffff' : r?.status === 'pass' ? STATUS.good : r?.status === 'fail' ? STATUS.critical : '#e1e0d9';
-    if (isPump) {
+    if (isPumpNode(n.id)) {
       parts.push(`<circle cx="${x}" cy="${y}" r="11" fill="#1c1b19"/><path d="M ${x - 4.5} ${y - 6} L ${x + 7} ${y} L ${x - 4.5} ${y + 6} Z" fill="#fff"/>`);
     } else if (n.kind === 'junction') {
       parts.push(`<circle cx="${x}" cy="${y}" r="2.6" fill="#52514e"/>`);
@@ -193,14 +185,7 @@ export function networkSnapshot(
     } else {
       parts.push(`<rect x="${x - 5.5}" y="${y - 5.5}" width="11" height="11" transform="rotate(45 ${x} ${y})" fill="${fill}" stroke="#52514e" stroke-width="1.5"/>`);
     }
-    if (n.kind !== 'junction' || isPump) {
-      const text = isPump ? `${n.label} (pump)` : n.label;
-      parts.push(`<text x="${x + 10}" y="${y - 8}" font-size="11" font-family="sans-serif" fill="#1c1b19">${esc(text)}</text>`);
-      if (on && r?.pressureBar != null) {
-        parts.push(`<text x="${x + 10}" y="${y + 5}" font-size="10" font-family="monospace" fill="#52514e">${r.pressureBar.toFixed(2)} bar</text>`);
-      }
-    }
   }
-  parts.push(...junctionLabels);
+  parts.push(...nodeLabels);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="Network drawing">${parts.join('')}</svg>`;
 }
