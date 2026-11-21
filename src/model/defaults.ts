@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: Settings = {
   frictionModel: 'hazenWilliams',
   fittingMethod: 'equivalentLength',
   applyCFactorToFittings: true,
+  autoFittings: true,
   velocityLimitMs: 5,
   kinematicViscosityM2s: 1.0e-6,
   gravity: 9.81,

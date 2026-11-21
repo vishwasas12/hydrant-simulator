@@ -45,7 +45,9 @@ Wheel zooms. Middle-drag or Space-drag pans. Ctrl+Z and Ctrl+Y undo and redo.
 
 **Tracing a CAD drawing:** on the right-hand panel with nothing selected, use *Import image or PDF*, then *Calibrate scale*. Click two points and type the real distance. Pipe lengths then follow the drawing unless you type one in.
 
-**Analysis tabs:** Manual (toggles and baseline delta), Nodes, Pipes, Hydrants, Critical path, Charts, Requirement check, Capacity, Scenarios, Assumptions. The *Report* button opens a printable report.
+**Analysis tabs:** Manual (toggles and baseline delta), Nodes, Pipes, Hydrants, Critical path, Charts, Requirement check, Capacity, Scenarios, Assumptions. The *Report* button opens a printable report written for the client: summary, drawing, network inventory (junction schedule, tees, bends, end caps and pipe lengths read from the drawing), inputs, results and design basis. A capacity search or scenario comparison appears only once it has been run or saved, and sections are numbered from what is included. Its design basis lists only what the network uses.
+
+**Tees and bends from the drawing:** with *Tees and bends from the drawing* on (Project panel, Solver), every junction is read from the drawing: three pipes make a tee, four a cross, two at an angle a bend, two sizes in line a reducer, and a hydrant on the main a branch tee. Their losses are added without typing them in: tee branch loss on the branch pipe, tee run loss on one run pipe, bends and reducers on the smaller pipe. The pipe panel lists them under *From the drawing*; add by hand only what the drawing does not show, such as bends on a riser. New projects start with it on. Files saved before it existed open with it off, so their results do not change; switching it on offers to remove hand-entered tees and elbows so they are not counted twice.
 
 ## Method
 

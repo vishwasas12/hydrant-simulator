@@ -138,6 +138,11 @@ export interface Settings {
   fittingMethod: FittingMethod;
   /** Scale NFPA equivalent lengths for C other than 120. */
   applyCFactorToFittings: boolean;
+  /**
+   * Add the tees, bends and reducers found in the drawing to the pipe losses.
+   * Optional so files saved before it existed load, and they keep their results.
+   */
+  autoFittings?: boolean;
   velocityLimitMs: number;
   kinematicViscosityM2s: number;
   gravity: number;

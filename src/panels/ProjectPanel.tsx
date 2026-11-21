@@ -1,3 +1,4 @@
+import { JUNCTION_FITTING_TYPES } from '../model/junctions';
 import { useResults, useStore } from '../state/store';
 import { NumberField, Section, Segmented, TextField, Toggle } from './fields';
 import { BackgroundControls } from './BackgroundControls';
@@ -10,6 +11,26 @@ export function ProjectPanel() {
   const hydrants = project.nodes.filter((n) => n.kind === 'hydrant').length;
   const reels = project.nodes.filter((n) => n.kind === 'hoseReel').length;
   const totalLength = project.pipes.reduce((s, p) => s + p.lengthM, 0);
+
+  const setAutoFittings = (on: boolean) => {
+    const handEntered = on
+      ? project.pipes.filter((p) => p.fittings.some((f) => JUNCTION_FITTING_TYPES.includes(f.type))).map((p) => p.label)
+      : [];
+    const remove =
+      handEntered.length > 0 &&
+      confirm(
+        `Tees, bends and reducers will now be found from the drawing.\n\n` +
+          `${handEntered.length} pipe${handEntered.length > 1 ? 's have' : ' has'} tees, elbows or reducers entered by hand ` +
+          `(${handEntered.slice(0, 8).join(', ')}${handEntered.length > 8 ? ', ...' : ''}). ` +
+          `Remove them so they are not counted twice?\n\nOK removes them. Cancel keeps them as extra fittings.`,
+      );
+    update((d) => {
+      d.settings.autoFittings = on;
+      if (remove) {
+        for (const p of d.pipes) p.fittings = p.fittings.filter((f) => !JUNCTION_FITTING_TYPES.includes(f.type));
+      }
+    });
+  };
 
   return (
     <>
@@ -80,6 +101,20 @@ export function ProjectPanel() {
             onChange={(v) => update((d) => void (d.settings.fittingMethod = v))}
           />
         </div>
+        <div className="field row">
+          <span className="field-label">Tees and bends from the drawing</span>
+          <Toggle
+            label="Find tees, bends and reducers from the drawing"
+            testId="auto-fittings"
+            checked={settings.autoFittings ?? false}
+            onChange={setAutoFittings}
+          />
+        </div>
+        <p className="muted">
+          {settings.autoFittings
+            ? 'Losses for tees, bends and reducers at junctions are added automatically. Add other fittings on the pipe.'
+            : 'Off: only the fittings entered on each pipe are counted.'}
+        </p>
         <div className="field row">
           <span className="field-label">Scale L_eq for C ≠ 120 (NFPA 13)</span>
           <Toggle

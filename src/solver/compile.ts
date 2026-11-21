@@ -8,6 +8,7 @@ import type {
   PipeValve,
   ScenarioOverrides,
 } from '../model/types';
+import { junctionFittings } from '../model/junctions';
 import { emitterCoefficients } from './emitter';
 import { fittingLoss } from './fittings';
 import { hazenWilliamsR } from './friction';
@@ -338,6 +339,8 @@ export function compile(network: Network, scenario?: ScenarioOverrides): Compile
     c.baseDemand[i] = lpmToM3s(n.baseDemandLpm);
   });
 
+  // Fittings are physical, so they come from every pipe in the drawing, open or closed.
+  const drawn = settings.autoFittings ? junctionFittings(network) : null;
   const edges: [number, number][] = [];
   let link = 0;
   for (const pipe of solvedPipes) {
@@ -345,7 +348,7 @@ export function compile(network: Network, scenario?: ScenarioOverrides): Compile
     const to = nodeIndex.get(pipe.to) as number;
     const cValue = effectiveC(pipe, scenario);
     const d = pipe.internalDiameterMm / 1000;
-    const loss = fittingLoss(pipe, cValue, settings, tables);
+    const loss = fittingLoss(pipe, cValue, settings, tables, drawn?.get(pipe.id));
     const leq = Math.max(pipe.lengthM + loss.equivalentLengthM, MIN_LENGTH_M);
     const area = pipeArea(d);
     c.kind[link] = LINK_PIPE;

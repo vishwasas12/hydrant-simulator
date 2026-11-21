@@ -31,6 +31,8 @@ const fitting = (id: string, type: FittingType, quantity: number): Fitting => ({
 
 export function seedProject(): Project {
   const project = emptyProject('Reference yard ring');
+  // Its fittings are placed by hand below, so the drawing does not add more.
+  project.settings.autoFittings = false;
   const nodes: NetworkNode[] = [];
   let nodeSeq = 0;
   let junctionSeq = 0;

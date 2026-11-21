@@ -16,8 +16,10 @@ export function constantPump(nodeId: string, headM: number): Pump {
   return { ...makePump('pump', 'Pump', nodeId), curve: { kind: 'constant', headM } };
 }
 
+/** Hand-check networks put every node at the origin, so fittings come only from what each test adds. */
 export function network(nodes: NetworkNode[], pipes: Project['pipes'], pumps: Pump[]): Project {
-  return { ...emptyProject('test'), nodes, pipes, pumps };
+  const base = emptyProject('test');
+  return { ...base, settings: { ...base.settings, autoFittings: false }, nodes, pipes, pumps };
 }
 
 export const pipe = makePipe;

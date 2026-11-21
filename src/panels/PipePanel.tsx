@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { addValve, uid } from '../model/edit';
+import { junctionFittings } from '../model/junctions';
 import { VALVE_NAMES } from './ValvePanel';
 import { C_PRESETS, internalDiameterFor, NOMINAL_SIZES } from '../model/tables';
 import type { Fitting, FittingType, Pipe } from '../model/types';
@@ -23,8 +25,19 @@ export function PipePanel({ pipe }: { pipe: Pipe }) {
   const update = useStore((s) => s.update);
   const select = useStore((s) => s.select);
   const material = useStore((s) => s.project.tables.material);
+  const nodes = useStore((s) => s.project.nodes);
+  const pipes = useStore((s) => s.project.pipes);
+  const pumps = useStore((s) => s.project.pumps);
+  const autoFittings = useStore((s) => s.project.settings.autoFittings ?? false);
+  const fittingNames = useStore((s) => s.project.tables.fittings);
   const results = useResults();
   const r = results.pipes.find((p) => p.id === pipe.id);
+  const drawn = useMemo(
+    () => (autoFittings ? (junctionFittings({ nodes, pipes, pumps }).get(pipe.id) ?? []) : []),
+    [autoFittings, nodes, pipes, pumps, pipe.id],
+  );
+  const nodeLabel = (id: string) => nodes.find((n) => n.id === id)?.label ?? '';
+  const fittingName = (type: FittingType) => fittingNames.find((f) => f.type === type)?.name ?? type;
 
   const set = (patch: (p: Pipe) => void, key?: string) =>
     update((d) => {
@@ -177,7 +190,30 @@ export function PipePanel({ pipe }: { pipe: Pipe }) {
       </Section>
 
       <Section title="Fittings">
-        {pipe.fittings.length === 0 && <p className="muted">No fittings on this pipe.</p>}
+        {autoFittings && (
+          <>
+            <p className="fitting-group">From the drawing</p>
+            {drawn.length === 0 && <p className="muted">No tee, bend or reducer at either end.</p>}
+            {drawn.map((f) => (
+              <div className="fitting-row drawn" key={f.id} data-testid="drawn-fitting">
+                <svg width="20" height="20" viewBox="-10 -10 20 20" aria-hidden="true">
+                  <FittingIcon type={f.type} />
+                </svg>
+                <span>
+                  {f.quantity > 1 ? `${f.quantity} × ` : ''}
+                  {fittingName(f.type)}
+                </span>
+                <span className="muted">at {nodeLabel(f.nodeId)}</span>
+              </div>
+            ))}
+            <p className="fitting-group">Added by hand</p>
+          </>
+        )}
+        {pipe.fittings.length === 0 && (
+          <p className="muted">
+            {autoFittings ? 'None. Add fittings the drawing does not show, such as bends on a riser.' : 'No fittings on this pipe.'}
+          </p>
+        )}
         {pipe.fittings.map((f) => (
           <div className="fitting-row" key={f.id}>
             <svg width="20" height="20" viewBox="-10 -10 20 20" aria-hidden="true">

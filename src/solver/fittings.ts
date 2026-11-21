@@ -64,12 +64,14 @@ export interface FittingLoss {
  * Resolves a pipe's fittings into an added equivalent length and a K sum, under
  * the selected method. A custom fitting keeps the form the user entered, so a
  * custom K still applies as K under the equivalent-length method and vice versa.
+ * `extra` carries fittings found in the drawing at the pipe's ends.
  */
 export function fittingLoss(
   pipe: Pipe,
   c: number,
   settings: Settings,
   tables: Tables,
+  extra: Fitting[] = [],
 ): FittingLoss {
   const size = sizeOf(pipe);
   const useK = settings.fittingMethod === 'kValue';
@@ -82,7 +84,7 @@ export function fittingLoss(
     type: VALVE_FITTING[v.type],
     quantity: 1,
   }));
-  for (const fitting of [...pipe.fittings, ...valveFittings]) {
+  for (const fitting of [...pipe.fittings, ...extra, ...valveFittings]) {
     const qty = fitting.quantity;
     if (fitting.type === 'custom') {
       const v = fitting.customValue ?? 0;
