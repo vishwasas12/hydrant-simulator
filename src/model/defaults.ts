@@ -18,10 +18,7 @@ export const DEFAULT_REPORT_DETAILS: ReportDetails = {
   client: '',
   site: '',
   documentNo: '',
-  revision: '0',
-  preparedBy: '',
-  checkedBy: '',
-  approvedBy: '',
+  revision: '',
   includeScenarios: true,
 };
 

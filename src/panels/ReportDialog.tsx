@@ -10,10 +10,7 @@ const FIELDS: { key: TextKey; label: string; placeholder?: string; wide?: boolea
   { key: 'client', label: 'Client', wide: true },
   { key: 'site', label: 'Site / location', wide: true },
   { key: 'documentNo', label: 'Document no.', placeholder: 'e.g. TRX-FH-001' },
-  { key: 'revision', label: 'Revision' },
-  { key: 'preparedBy', label: 'Prepared by' },
-  { key: 'checkedBy', label: 'Checked by' },
-  { key: 'approvedBy', label: 'Approved by' },
+  { key: 'revision', label: 'Revision', placeholder: 'e.g. 0' },
 ];
 
 /** Document details and section choices, asked for before the report opens. */
@@ -41,7 +38,10 @@ export function ReportDialog({ onClose, onCreate }: { onClose: () => void; onCre
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" data-testid="report-dialog">
         <h2 id="report-dialog-title">Client report</h2>
-        <p className="muted">Issued under the {COMPANY} letterhead. These details are saved with the project.</p>
+        <p className="muted">
+          Issued under the {COMPANY} letterhead with today&rsquo;s date. Details left blank are kept off the report. They are saved
+          with the project.
+        </p>
         <form
           onSubmit={(e) => {
             e.preventDefault();

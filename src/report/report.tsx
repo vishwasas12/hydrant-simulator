@@ -955,12 +955,7 @@ const styles = (pageHeader: string, footer: string) => `
   .doc-control { margin: 16px 0 0; }
   .doc-control th { width: 17%; background: var(--soft); font-weight: 600; border: 1px solid var(--line); }
   .doc-control td { width: 33%; border: 1px solid var(--line); }
-  .doc-control th, .doc-control td, .signoff th, .signoff td { padding: 5px 8px; vertical-align: middle; }
-  .signoff { margin: 12px 0 0; }
-  .signoff th, .signoff td { border: 1px solid var(--line); text-align: left; }
-  .signoff th { background: var(--soft); width: 25%; }
-  .signoff td { height: 24px; }
-  .signoff tr.sign td { height: 40px; }
+  .doc-control th, .doc-control td { padding: 5px 8px; vertical-align: middle; }
   .contents-block { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line); }
   .contents-block h2 { border: 0; margin-bottom: 4px; }
   .contents { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 32px; }
@@ -1215,24 +1210,25 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
 
   const date = generatedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
   const text = (v: string) => v.trim();
-  const revision = text(details.revision) || '0';
+  const revision = text(details.revision);
+  // Only what has been entered, so a report with no details shows just the date.
   const control: [string, string][] = [
     ['Client', text(details.client)],
     ['Document no.', text(details.documentNo)],
     ['Site / location', text(details.site)],
     ['Revision', revision],
     ['Date of issue', date],
-    ['Case analysed', open.length > 0 ? `${listText(open.map((n) => n.label), 4)} flowing` : 'All outlets closed'],
   ].filter(([, v]) => v !== '') as [string, string][];
   const controlRows: string[] = [];
   for (let i = 0; i < control.length; i += 2) {
     const [a, b] = [control[i], control[i + 1]];
     controlRows.push(
-      `<tr><th>${esc(a[0])}</th><td>${esc(a[1])}</td>${b ? `<th>${esc(b[0])}</th><td>${esc(b[1])}</td>` : '<th></th><td></td>'}</tr>`,
+      b
+        ? `<tr><th>${esc(a[0])}</th><td>${esc(a[1])}</td><th>${esc(b[0])}</th><td>${esc(b[1])}</td></tr>`
+        : `<tr><th>${esc(a[0])}</th><td colspan="3">${esc(a[1])}</td></tr>`,
     );
   }
-  const people = [details.preparedBy, details.checkedBy, details.approvedBy].map(text);
-  const pageHeader = [project.name, text(details.documentNo), `Rev. ${revision}`].filter(Boolean).join(' · ');
+  const pageHeader = [project.name, text(details.documentNo), revision ? `Rev. ${revision}` : ''].filter(Boolean).join(' · ');
 
   return `<!doctype html>
 <html lang="en">
@@ -1252,14 +1248,6 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
   <div class="eyebrow">Project</div>
   <h1>${esc(project.name)}</h1>
   <table class="doc-control"><tbody>${controlRows.join('')}</tbody></table>
-  <table class="signoff">
-    <thead><tr><th></th><th>Prepared by</th><th>Checked by</th><th>Approved by</th></tr></thead>
-    <tbody>
-      <tr><th>Name</th>${people.map((p) => `<td>${esc(p)}</td>`).join('')}</tr>
-      <tr class="sign"><th>Signature</th><td></td><td></td><td></td></tr>
-      <tr><th>Date</th><td>${people[0] ? esc(date) : ''}</td><td></td><td></td></tr>
-    </tbody>
-  </table>
 </div>
 <div class="contents-block">
   <h2>Contents</h2>

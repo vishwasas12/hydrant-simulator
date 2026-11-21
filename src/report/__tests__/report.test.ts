@@ -119,15 +119,22 @@ describe('client report', () => {
 
   it('carries the company letterhead and the document details', () => {
     const p = small();
-    p.report = { client: 'Acme <Ports>', documentNo: 'TRX-FH-001', revision: 'B', preparedBy: 'A. Kumar' };
+    p.report = { client: 'Acme <Ports>', documentNo: 'TRX-FH-001', revision: 'B' };
     const html = report(p);
     expect(html).toContain('<div class="company">TRIVIONIX</div>');
     expect(html).toContain('<th>Client</th><td>Acme &lt;Ports&gt;</td>');
     expect(html).toContain('<th>Document no.</th><td>TRX-FH-001</td>');
     expect(html).toContain('<th>Revision</th><td>B</td>');
-    expect(html).toContain('<tr><th>Name</th><td>A. Kumar</td><td></td><td></td></tr>');
     // Blank details are left out rather than shown empty.
     expect(html).not.toContain('<th>Site / location</th>');
+  });
+
+  it('shows only the date when no details are entered, and no sign-off', () => {
+    const html = report(small());
+    const cover = html.split('<table class="doc-control">')[1].split('</table>')[0];
+    const labels = [...cover.matchAll(/<th>([^<]+)<\/th>/g)].map((m) => m[1]);
+    expect(labels).toEqual(['Date of issue']);
+    expect(html).not.toMatch(/Prepared by|Checked by|Approved by|Signature/);
   });
 
   it('states the method, formulas, assumptions and limitations that apply', () => {

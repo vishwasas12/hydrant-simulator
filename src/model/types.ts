@@ -221,15 +221,12 @@ export interface BackgroundLayer {
   visible: boolean;
 }
 
-/** Document details and choices for the client report. */
+/** Document details and choices for the client report. Blank details are left off it. */
 export interface ReportDetails {
   client: string;
   site: string;
   documentNo: string;
   revision: string;
-  preparedBy: string;
-  checkedBy: string;
-  approvedBy: string;
   /** Include the saved operating scenarios. */
   includeScenarios: boolean;
 }

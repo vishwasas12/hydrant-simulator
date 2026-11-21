@@ -21,9 +21,6 @@
         "site": { "type": "string" },
         "documentNo": { "type": "string" },
         "revision": { "type": "string" },
-        "preparedBy": { "type": "string" },
-        "checkedBy": { "type": "string" },
-        "approvedBy": { "type": "string" },
         "includeScenarios": { "type": "boolean" }
       }
     },
