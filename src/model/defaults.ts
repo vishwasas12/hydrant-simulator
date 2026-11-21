@@ -1,5 +1,5 @@
 import { defaultTables, internalDiameterFor, MATERIAL_TABLE } from './tables';
-import type { Outlet, Pipe, Project, Pump, PumpCurveSpec, Settings } from './types';
+import type { Outlet, Pipe, Project, Pump, PumpCurveSpec, ReportDetails, Settings } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
   frictionModel: 'hazenWilliams',
@@ -13,6 +13,22 @@ export const DEFAULT_SETTINGS: Settings = {
   maxIterations: 200,
   headToleranceM: 1e-6,
 };
+
+export const DEFAULT_REPORT_DETAILS: ReportDetails = {
+  client: '',
+  site: '',
+  documentNo: '',
+  revision: '0',
+  preparedBy: '',
+  checkedBy: '',
+  approvedBy: '',
+  includeScenarios: true,
+};
+
+/** Report details with defaults filled in for anything not yet entered. */
+export function reportDetails(project: Pick<Project, 'report'>): ReportDetails {
+  return { ...DEFAULT_REPORT_DETAILS, ...project.report };
+}
 
 export const DEFAULT_C = 120;
 export const DEFAULT_ROUGHNESS_MM = 0.045;

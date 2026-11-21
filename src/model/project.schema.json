@@ -14,6 +14,19 @@
     "tables": { "$ref": "#/definitions/tables" },
     "scenarios": { "type": "array", "items": { "$ref": "#/definitions/scenario" } },
     "baseline": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/scenario" }] },
+    "report": {
+      "type": "object",
+      "properties": {
+        "client": { "type": "string" },
+        "site": { "type": "string" },
+        "documentNo": { "type": "string" },
+        "revision": { "type": "string" },
+        "preparedBy": { "type": "string" },
+        "checkedBy": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "includeScenarios": { "type": "boolean" }
+      }
+    },
     "background": { "anyOf": [{ "type": "null" }, { "$ref": "#/definitions/background" }] }
   },
   "definitions": {

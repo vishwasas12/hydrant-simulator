@@ -107,6 +107,43 @@ describe('client report', () => {
     expect(inputs).toMatch(/Tee \(branch\) at J\d/);
   });
 
+  it('leaves out operating scenarios when asked to', () => {
+    const p = small();
+    p.scenarios.push({ id: 's1', name: 'Both hydrants', hydrantOn: {} });
+    expect(sectionTitles(report(p)).map(([, t]) => t)).toContain('Operating scenarios');
+    p.report = { includeScenarios: false };
+    const titles = sectionTitles(report(p)).map(([, t]) => t);
+    expect(titles).not.toContain('Operating scenarios');
+    expect(sectionTitles(report(p)).map(([n]) => n)).toEqual(titles.map((_, i) => i + 1));
+  });
+
+  it('carries the company letterhead and the document details', () => {
+    const p = small();
+    p.report = { client: 'Acme <Ports>', documentNo: 'TRX-FH-001', revision: 'B', preparedBy: 'A. Kumar' };
+    const html = report(p);
+    expect(html).toContain('<div class="company">TRIVIONIX</div>');
+    expect(html).toContain('<th>Client</th><td>Acme &lt;Ports&gt;</td>');
+    expect(html).toContain('<th>Document no.</th><td>TRX-FH-001</td>');
+    expect(html).toContain('<th>Revision</th><td>B</td>');
+    expect(html).toContain('<tr><th>Name</th><td>A. Kumar</td><td></td><td></td></tr>');
+    // Blank details are left out rather than shown empty.
+    expect(html).not.toContain('<th>Site / location</th>');
+  });
+
+  it('states the method, formulas, assumptions and limitations that apply', () => {
+    const html = report(small());
+    const method = html.split('<section id="method">')[1].split('</section>')[0];
+    expect(method).toContain('Pipe friction, Hazen-Williams');
+    expect(method).toContain('Hydrant discharge through landing valve and nozzle');
+    expect(method).toMatch(/<h3>Assumptions<\/h3>/);
+    expect(method).toMatch(/<h3>Limitations<\/h3>/);
+    expect(method).toContain('prepared by TRIVIONIX');
+    // No Darcy-Weisbach or fixed-demand terms for this network.
+    expect(method).not.toMatch(/Swamee|Fixed-demand/);
+    const titles = sectionTitles(html).map(([, t]) => t);
+    expect(titles[titles.length - 1]).toBe('Method, assumptions and limitations');
+  });
+
   it('escapes the project name in the page footer', () => {
     const p = small();
     p.name = 'Site "A" </style><script>x</script>';

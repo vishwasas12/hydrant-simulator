@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Canvas, deleteSelection } from './canvas/Canvas';
 import { emptyProject } from './model/defaults';
 import { parseProject } from './model/schema';
@@ -6,6 +6,7 @@ import { seedProject } from './model/seed';
 import { Properties } from './panels/Properties';
 import { Toolbar, ViewBar } from './panels/Toolbar';
 import { BottomPanel } from './panels/BottomPanel';
+import { ReportDialog } from './panels/ReportDialog';
 import { useCapacity } from './analysis/useCapacity';
 import { buildReportHtml } from './report/report';
 import { networkKey, resultsFor, useStore, type Tool } from './state/store';
@@ -41,6 +42,7 @@ export function App() {
   const showToast = useStore((s) => s.showToast);
   const autosaveNote = useStore((s) => s.autosaveNote);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const { results, ms } = resultsFor(project);
 
   useEffect(() => {
@@ -173,7 +175,7 @@ export function App() {
             Save
           </button>
           <span className="viewbar-sep" />
-          <button className="btn primary" onClick={report} data-testid="report">
+          <button className="btn primary" onClick={() => setReportOpen(true)} data-testid="report">
             Report
           </button>
           <input
@@ -228,6 +230,16 @@ export function App() {
         <div className="toast" role="status" data-testid="toast">
           {toast}
         </div>
+      )}
+
+      {reportOpen && (
+        <ReportDialog
+          onClose={() => setReportOpen(false)}
+          onCreate={() => {
+            setReportOpen(false);
+            report();
+          }}
+        />
       )}
     </div>
   );

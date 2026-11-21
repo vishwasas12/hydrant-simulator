@@ -221,9 +221,24 @@ export interface BackgroundLayer {
   visible: boolean;
 }
 
+/** Document details and choices for the client report. */
+export interface ReportDetails {
+  client: string;
+  site: string;
+  documentNo: string;
+  revision: string;
+  preparedBy: string;
+  checkedBy: string;
+  approvedBy: string;
+  /** Include the saved operating scenarios. */
+  includeScenarios: boolean;
+}
+
 export interface Project extends Network {
   schemaVersion: 1;
   name: string;
+  /** Optional so files saved before it existed load. */
+  report?: Partial<ReportDetails>;
   /** Metres per drawing unit. Set by scale calibration. */
   metersPerUnit: number;
   background: BackgroundLayer | null;

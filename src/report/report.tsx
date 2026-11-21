@@ -3,7 +3,9 @@ import type { CapacityResult, Combo } from '../analysis/capacity';
 import { requirementCheck, type RequirementRow } from '../analysis/requirement';
 import { compareScenarios } from '../analysis/scenarios';
 import { CUSTOM_CLASS, DIAMETER_CLASSES, diameterClass, STATUS } from '../canvas/colors';
+import { reportDetails } from '../model/defaults';
 import { countedFittings, type AutoFitting } from '../model/junctions';
+import { COMPANY } from './company';
 import type { Fitting, Outlet, Project, Pump, Scenario } from '../model/types';
 import { PressureProfileChart, profileData, pumpSystemData, PumpSystemChart } from '../panels/charts';
 import type { Column } from '../panels/DataTable';
@@ -801,41 +803,184 @@ function legendHtml(project: Project, results: SolveResults, path: CriticalPath 
 }
 
 /* ------------------------------------------------------------------ */
+/* Method, assumptions and limitations                                 */
+/* ------------------------------------------------------------------ */
+
+const sub = (s: string) => `<sub>${s}</sub>`;
+const sup = (s: string) => `<sup>${s}</sup>`;
+
+/** Formulas, assumptions and limitations, limited to the methods this project uses. */
+function methodSection(project: Project, results: SolveResults, client: string): string {
+  const s = project.settings;
+  const hw = s.frictionModel === 'hazenWilliams';
+  const leq = s.fittingMethod === 'equivalentLength';
+  const outlets = project.nodes.filter((n) => n.outlet).map((n) => n.outlet as Outlet);
+  const nozzles = outlets.some((o) => o.model === 'emitter');
+  const fixed = outlets.some((o) => o.model === 'fixed');
+  const hose = outlets.some((o) => o.model === 'emitter' && o.hoseLengthM > 0);
+  const scaled = leq && hw && s.applyCFactorToFittings && project.pipes.some((p) => p.c !== 120);
+  const elevations = new Set(project.nodes.map((n) => n.elevationM));
+  const pump = project.pumps[0];
+  const lastFlow = pump ? lastCurveFlow(pump) : null;
+  const beyond = results.ok && lastFlow !== null && results.system.pumpFlowLpm > lastFlow;
+  const totals = fittingTotals(nodeConnections(project));
+  const valves = project.pipes.some((p) => (p.valves ?? []).length > 0);
+  const allNewSteel = project.pipes.every((p) => p.c === 120);
+
+  const formulas: [string, string][] = [
+    ['Flow continuity at each node', `Σ Q${sub('in')} − Σ Q${sub('out')} = q${sub('node')}`],
+    ['Energy balance along each pipe', `H${sub('i')} − H${sub('j')} = h${sub('f')}${leq ? '' : ` + h${sub('m')}`}`],
+  ];
+  if (hw) {
+    formulas.push(['Pipe friction, Hazen-Williams', `h${sub('f')} = 10.67 · L${sub('e')} · Q${sup('1.852')} / (C${sup('1.852')} · D${sup('4.87')})`]);
+  } else {
+    formulas.push(['Pipe friction, Darcy-Weisbach', `h${sub('f')} = f · (L${sub('e')} / D) · V${sup('2')} / 2g`]);
+    formulas.push(['Friction factor, Swamee-Jain', `f = 0.25 / [log${sub('10')}(ε / 3.7D + 5.74 / Re${sup('0.9')})]${sup('2')},  Re = V D / ν`]);
+  }
+  formulas.push(
+    leq
+      ? ['Fitting losses as equivalent length', `L${sub('e')} = L + Σ n${sub('i')} · L${sub('i')}${scaled ? ' · m(C)' : ''}`]
+      : ['Fitting losses by loss coefficient', `h${sub('m')} = Σ K · V${sup('2')} / 2g`],
+  );
+  formulas.push(['Flow velocity', `V = 4Q / (π D${sup('2')})`]);
+  if (nozzles) {
+    formulas.push([
+      'Hydrant discharge through landing valve and nozzle',
+      `H = (q${sup('2')} / 2g) · [1 / (C${sub('d')}${sup('2')} A${sub('n')}${sup('2')}) + K${sub('v')} / A${sub('v')}${sup('2')}]${hose ? ` + h${sub('hose')}` : ''}`,
+    ]);
+  }
+  if (fixed) formulas.push(['Fixed-demand outlet', `q = q${sub('fixed')} for any positive pressure`]);
+  formulas.push(['Residual pressure', `p = (H − z) / ${s.mPerBar}`]);
+  if (pump) formulas.push(['Pump head', `H${sub('p')}(Q) fitted by least squares through the curve points${beyond ? ', extended in a straight line beyond the last point' : ''}`]);
+  formulas.push(['Acceptance', `p ≥ p${sub('min')} and q ≥ q${sub('min')};  margin = min[(p − p${sub('min')}) / p${sub('min')}, (q − q${sub('min')}) / q${sub('min')}]`]);
+
+  const notation: [string, string][] = [
+    ['H, z', 'Total head and elevation at a node, m'],
+    ['Q, q', 'Flow in a pipe, and flow per outlet, m³/s'],
+    ['h' + sub('f'), 'Friction head loss in a pipe, m'],
+    ...(leq ? [] : ([['h' + sub('m'), 'Head loss through fittings, m']] as [string, string][])),
+    ['L, L' + sub('e'), 'Pipe length, and length including fitting allowance, m'],
+    ...(leq
+      ? ([[`n${sub('i')}, L${sub('i')}`, 'Number of fittings of each type, and the equivalent length of one, m']] as [string, string][])
+      : ([['K', 'Loss coefficient of a fitting']] as [string, string][])),
+    ...(scaled ? ([['m(C)', 'NFPA 13 multiplier for C other than 120']] as [string, string][]) : []),
+    ['D, V', 'Internal diameter, m, and mean velocity, m/s'],
+    ...(hw
+      ? ([['C', 'Hazen-Williams roughness coefficient']] as [string, string][])
+      : ([
+          ['f, ε', 'Darcy friction factor, and pipe roughness, m'],
+          ['Re, ν', 'Reynolds number, and kinematic viscosity of water, m²/s'],
+        ] as [string, string][])),
+    ['g', `Gravitational acceleration, ${s.gravity} m/s²`],
+    ...(nozzles
+      ? ([
+          [`C${sub('d')}, A${sub('n')}`, 'Nozzle discharge coefficient and bore area, m²'],
+          [`K${sub('v')}, A${sub('v')}`, 'Landing valve loss coefficient and bore area, m²'],
+        ] as [string, string][])
+      : []),
+    ...(hose ? ([[`h${sub('hose')}`, 'Friction loss in the hose, by Hazen-Williams, m']] as [string, string][]) : []),
+    ['p', 'Residual pressure, bar'],
+    [`p${sub('min')}, q${sub('min')}`, 'Minimum residual pressure and flow per outlet'],
+  ];
+
+  const assumptions = [
+    'The network operates in steady state with water at about 20 °C; every pipe runs full.',
+    `Pipe sizes, internal diameters, lengths and C values are as listed in Design inputs and Design basis${allNewSteel && hw ? '; C = 120 represents new steel pipe' : ''}. No further allowance is made for deterioration of the pipe.`,
+    s.autoFittings
+      ? `Tees, bends and reducers are taken from the network drawing, and each adds its ${leq ? 'equivalent length' : 'loss coefficient'} to an adjoining pipe as listed in Design inputs.${totals.takeOffTees > 0 ? ' Each hydrant on the main is connected through a tee.' : ''}`
+      : 'Fitting losses are those entered for each pipe, as listed in Design inputs.',
+    elevations.size === 1
+      ? `All nodes are at the same level (${[...elevations][0]} m), so no static head difference is included.`
+      : 'Node elevations are as listed, and the static head difference between them is included.',
+    ...(pump
+      ? [
+          `The pump delivers the head-flow curve given in Design basis${pump.suctionLossM ? `, less a suction loss of ${pump.suctionLossM} m` : ''}${pump.waterLevelM ? `, with the water level ${pump.waterLevelM} m relative to the pump` : ''}.${beyond ? ' In the case analysed the pump runs beyond the last point of its curve, where the curve is extended in a straight line.' : ''}`,
+        ]
+      : []),
+    'Only the outlets stated as flowing draw water. No other demand, such as sprinklers or process use, is taken from the network at the same time.',
+    ...(nozzles ? ['Each flowing hydrant discharges to atmosphere through its landing valve and nozzle as listed in Design basis.'] : []),
+    ...(valves ? ['Valves are in the positions shown in Design inputs.'] : []),
+  ];
+
+  const limitations = [
+    'The analysis is steady state. Transient effects such as water hammer from pump start, pump stop or valve closure are not assessed.',
+    'Results are only as accurate as the input data. Pipe routes, lengths, fittings and elevations should be verified against the installation as built.',
+    ...(pump ? ['Pump performance should be confirmed against the manufacturer’s certified test curve.'] : []),
+    'The minimum residual pressure and flow used are listed in Design basis. They are to be confirmed against the applicable code (NBC 2016 Part 4, TAC, IS 13039, NFPA 14/24) and the requirements of the local fire authority.',
+    'Ageing of the pipe, partly closed valves and blockages reduce capacity and are covered only to the extent of the C values used.',
+    'Water storage capacity, the pump room and suction arrangement, pipe supports and thrust restraint, and electrical and control systems are outside the scope of this report.',
+  ];
+
+  const list = (items: string[]) => `<ol class="numbered">${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ol>`;
+  const [mantissa, exponent] = s.headToleranceM.toExponential().split('e');
+  const tolerance =
+    s.headToleranceM >= 0.001 ? String(s.headToleranceM) : `${mantissa === '1' ? '' : `${mantissa} × `}10${sup(String(Number(exponent)).replace('-', '−'))}`;
+  return `<p class="lead">The network is solved as a steady-state pipe network by the Global Gradient Algorithm (Todini and Pilati, 1988), the method used in EPANET. Flow continuity is satisfied at every node and energy balance along every pipe, and iteration continues until heads change by less than ${tolerance} m${results.ok ? `; this case converged in ${plural(results.iterations, 'iteration')}` : ''}.</p>
+<h3>Formulas used</h3>
+<table class="formulas"><tbody>${formulas
+    .map(([what, f], i) => `<tr><td class="num">${i + 1}</td><td>${esc(what)}</td><td class="expr">${f}</td></tr>`)
+    .join('')}</tbody></table>
+<h3>Notation</h3>
+<table class="notation"><tbody>${notation.map(([sym, meaning]) => `<tr><td class="expr">${sym}</td><td>${esc(meaning)}</td></tr>`).join('')}</tbody></table>
+<h3>Assumptions</h3>
+${list(assumptions)}
+<h3>Limitations</h3>
+${list(limitations)}
+<p class="statement">This report has been prepared by ${esc(COMPANY)}${client ? ` for ${esc(client)}` : ''} on the basis of the data, assumptions and methods stated above, for the project named on the cover. It should be read as a whole.</p>`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
 
-const styles = (footer: string) => `
-  :root { --ink: #1c1b19; --muted: #5d5c58; --line: #d9d7cf; --rule: #e8e6df; --soft: #f5f4ef; --accent: #b3261e; }
+/** Page styles. The two arguments are CSS strings for the running page header and footer. */
+const styles = (pageHeader: string, footer: string) => `
+  :root { --ink: #1c1b19; --muted: #5d5c58; --line: #d4d2ca; --rule: #e6e4dd; --soft: #f4f4f1; --brand: #16325c; }
   * { box-sizing: border-box; }
   html { background: #e9e8e3; }
-  body { margin: 24px auto; max-width: 1040px; padding: 0 48px 48px; color: var(--ink); background: #fff;
-    font: 12.5px/1.5 'Segoe UI', system-ui, -apple-system, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.08);
+  body { margin: 24px auto; max-width: 1040px; padding: 0 52px 52px; color: var(--ink); background: #fff;
+    font: 12.5px/1.55 'Segoe UI', system-ui, -apple-system, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.08);
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; margin: 0 -48px 28px; padding: 10px 48px;
+  .toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; margin: 0 -52px 28px; padding: 10px 52px;
     background: rgba(255,255,255,.95); border-bottom: 1px solid var(--line); }
-  .toolbar button { height: 30px; padding: 0 14px; font: inherit; cursor: pointer; background: var(--ink); color: #fff; border: 0; border-radius: 4px; }
-  .doc-head { padding-bottom: 16px; border-bottom: 3px solid var(--ink); }
-  .doc-kind { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-  h1 { margin: 4px 0 14px; font-size: 26px; font-weight: 600; line-height: 1.2; }
-  .doc-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 18px; margin: 0; }
-  .doc-meta dt { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-  .doc-meta dd { margin: 0; font-weight: 600; }
-  .contents { margin: 14px 0 0; padding: 0; list-style: none; columns: 2; column-gap: 32px; }
-  .contents li { padding: 1px 0; break-inside: avoid; }
+  .toolbar button { height: 30px; padding: 0 14px; font: inherit; cursor: pointer; background: var(--brand); color: #fff; border: 0; border-radius: 4px; }
+
+  .letterhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 12px; border-bottom: 3px solid var(--brand); }
+  .company { font-size: 28px; font-weight: 700; letter-spacing: .24em; color: var(--brand); line-height: 1; }
+  .doc-type { text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--brand); }
+  .doc-type span { display: block; font-weight: 400; letter-spacing: .06em; color: var(--muted); }
+  .title-block { padding: 22px 0 6px; }
+  .title-block .eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  h1 { margin: 4px 0 4px; font-size: 26px; font-weight: 600; line-height: 1.25; }
+  .doc-control { margin: 16px 0 0; }
+  .doc-control th { width: 17%; background: var(--soft); font-weight: 600; border: 1px solid var(--line); }
+  .doc-control td { width: 33%; border: 1px solid var(--line); }
+  .doc-control th, .doc-control td, .signoff th, .signoff td { padding: 5px 8px; vertical-align: middle; }
+  .signoff { margin: 12px 0 0; }
+  .signoff th, .signoff td { border: 1px solid var(--line); text-align: left; }
+  .signoff th { background: var(--soft); width: 25%; }
+  .signoff td { height: 24px; }
+  .signoff tr.sign td { height: 40px; }
+  .contents-block { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .contents-block h2 { border: 0; margin-bottom: 4px; }
+  .contents { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 32px; }
+  .contents li { padding: 2px 0; break-inside: avoid; border-bottom: 1px dotted var(--rule); }
   .contents a { color: inherit; text-decoration: none; }
-  .contents b { display: inline-block; width: 24px; font-weight: 600; color: var(--accent); }
-  section { margin-top: 30px; }
-  h2 { display: flex; gap: 10px; margin: 0 0 10px; padding-bottom: 5px; font-size: 17px; font-weight: 600; border-bottom: 1.5px solid var(--ink); break-after: avoid; }
-  h2 b { color: var(--accent); font-weight: 600; }
-  h3 { margin: 18px 0 6px; font-size: 13px; font-weight: 600; break-after: avoid; }
+  .contents b { display: inline-block; width: 26px; font-weight: 600; color: var(--brand); }
+
+  section { margin-top: 32px; }
+  h2 { display: flex; gap: 12px; margin: 0 0 10px; padding-bottom: 5px; font-size: 14.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--brand); border-bottom: 1.5px solid var(--brand); break-after: avoid; }
+  h2 b { font-weight: 700; }
+  h3 { margin: 18px 0 6px; font-size: 12.5px; font-weight: 600; break-after: avoid; }
   p { margin: 6px 0; }
   .lead { margin-bottom: 10px; }
   .note { font-size: 11px; color: var(--muted); }
-  .verdict { margin: 0 0 14px; padding: 12px 14px; border-left: 4px solid; font-size: 15px; font-weight: 600; }
-  .verdict.pass { background: #e8f4e6; border-color: #0a7a0a; color: #0a5f0a; }
+  .verdict { margin: 0 0 14px; padding: 11px 14px; border-left: 4px solid; font-size: 14.5px; font-weight: 600; }
+  .verdict.pass { background: #e9f3e7; border-color: #0a7a0a; color: #0a5f0a; }
   .verdict.fail { background: #fbe9e8; border-color: #b3261e; color: #8f2020; }
   .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 14px; }
-  .fact { padding: 9px 12px; background: var(--soft); border-left: 3px solid var(--ink); break-inside: avoid; }
+  .fact { padding: 9px 12px; background: var(--soft); border-left: 3px solid var(--brand); break-inside: avoid; }
   .fact span { display: block; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
   .fact strong { display: block; font-size: 16px; font-weight: 600; }
   .fact small { display: block; font-size: 11px; color: var(--muted); }
@@ -844,6 +989,7 @@ const styles = (footer: string) => `
   .drawing { padding: 6px; border: 1px solid var(--line); break-inside: avoid; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; font-size: 11px; color: var(--muted); }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
+
   table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0 8px; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
@@ -857,19 +1003,29 @@ const styles = (footer: string) => `
   .schedule td:last-child { width: 50%; }
   .kv { width: auto; min-width: 55%; }
   .kv th { width: 230px; padding: 3px 24px 3px 0; font-weight: 400; color: var(--muted); background: none; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .basis tr.group th { padding-top: 12px; background: none; border-bottom: 1px solid var(--line); font-size: 11.5px; }
-  .basis td:first-child { white-space: normal; width: 30%; }
-  .basis td:last-child { width: 30%; color: var(--muted); }
+  .basis td:first-child { white-space: normal; width: 24%; font-weight: 600; }
+  .basis td:last-child { width: 32%; color: var(--muted); }
+  .formulas td { padding: 5px 6px; vertical-align: middle; }
+  .formulas td.num { width: 28px; color: var(--muted); }
+  .formulas td:nth-child(2) { width: 34%; white-space: normal; }
+  .expr { font-family: 'Cambria Math', Cambria, 'Times New Roman', serif; font-size: 13px; font-style: italic; }
+  .notation { width: auto; min-width: 60%; }
+  .notation td.expr { width: 110px; }
+  .numbered { margin: 4px 0 10px; padding-left: 22px; }
+  .numbered li { margin: 4px 0; padding-left: 2px; }
+  .statement { margin-top: 18px; padding: 10px 12px; font-size: 11.5px; background: var(--soft); border-left: 3px solid var(--brand); }
   .chart { margin: 6px 0 14px; break-inside: avoid; }
   .chart svg { max-width: 100%; height: auto; }
   .issues { margin: 6px 0 12px; padding: 8px 12px 8px 30px; background: #fdf6e3; border-left: 3px solid #c98a00; }
   .issues li { margin: 2px 0; }
-  .limitations { margin-top: 32px; padding: 12px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
-  .limitations strong { color: var(--ink); }
+  .end { margin-top: 28px; text-align: center; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+
   @media (max-width: 720px) {
     body { margin: 0; padding: 0 16px 32px; }
     .toolbar { margin: 0 -16px 20px; padding: 10px 16px; }
-    .doc-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .letterhead { flex-direction: column; align-items: flex-start; }
+    .doc-type { text-align: left; }
+    .company { font-size: 22px; }
     .facts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
     .contents { columns: 1; }
     table { display: block; overflow-x: auto; }
@@ -879,12 +1035,19 @@ const styles = (footer: string) => `
     body { margin: 0; max-width: none; padding: 0; font-size: 11.5px; box-shadow: none; }
     .toolbar { display: none; }
     section { margin-top: 22px; }
+    .contents-block { break-after: page; }
   }
   @page {
     size: A4;
-    margin: 14mm 12mm 16mm;
+    margin: 16mm 13mm 16mm;
+    @top-left { content: ${cssString(COMPANY)}; font: 700 9px 'Segoe UI', sans-serif; letter-spacing: .2em; color: #16325c; }
+    @top-right { content: ${pageHeader}; font: 9px 'Segoe UI', sans-serif; color: #777; }
     @bottom-left { content: ${footer}; font: 9px 'Segoe UI', sans-serif; color: #777; }
     @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9px 'Segoe UI', sans-serif; color: #777; }
+  }
+  @page :first {
+    @top-left { content: none; }
+    @top-right { content: none; }
   }
 `;
 
@@ -908,6 +1071,7 @@ interface Section {
 
 /** Builds a self-contained, printable HTML report. Analyses that were not run are left out. */
 export function buildReportHtml({ project, results, capacity, generatedAt }: ReportInput): string {
+  const details = reportDetails(project);
   const path = results.ok ? criticalPath(project, results) : null;
   const outlets = results.nodes.filter((n) => n.kind !== 'junction');
   const open = outlets.filter((n) => n.status === 'pass' || n.status === 'fail').sort((a, b) => naturalCompare(a.label, b.label));
@@ -1045,39 +1209,64 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
     add('requirement', `Each ${outletNoun(requirement.map((r) => r.kind), 1)} flowing alone`, requirementSection(requirement));
   }
   if (capacity) add('capacity', 'Simultaneous operation', capacitySection(capacity));
-  if (project.scenarios.length > 0) add('scenarios', 'Operating scenarios', scenariosSection(project));
+  if (project.scenarios.length > 0 && details.includeScenarios) add('scenarios', 'Operating scenarios', scenariosSection(project));
   add('basis', 'Design basis', basisTable(designBasis(project, results)));
+  add('method', 'Method, assumptions and limitations', methodSection(project, results, details.client.trim()));
 
-  const hydrantCount = outlets.filter((n) => n.kind === 'hydrant').length;
-  const reelCount = outlets.length - hydrantCount;
-  const meta: [string, string][] = [
-    ['Date', generatedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })],
-    [
-      'Outlets',
-      [hydrantCount ? plural(hydrantCount, 'hydrant') : '', reelCount ? plural(reelCount, 'hose reel') : ''].filter(Boolean).join(', ') || 'None',
-    ],
-    ['Pipework', `${pipeLength.toFixed(0)} m, ${sizes} NB`],
+  const date = generatedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  const text = (v: string) => v.trim();
+  const revision = text(details.revision) || '0';
+  const control: [string, string][] = [
+    ['Client', text(details.client)],
+    ['Document no.', text(details.documentNo)],
+    ['Site / location', text(details.site)],
+    ['Revision', revision],
+    ['Date of issue', date],
     ['Case analysed', open.length > 0 ? `${listText(open.map((n) => n.label), 4)} flowing` : 'All outlets closed'],
-  ];
+  ].filter(([, v]) => v !== '') as [string, string][];
+  const controlRows: string[] = [];
+  for (let i = 0; i < control.length; i += 2) {
+    const [a, b] = [control[i], control[i + 1]];
+    controlRows.push(
+      `<tr><th>${esc(a[0])}</th><td>${esc(a[1])}</td>${b ? `<th>${esc(b[0])}</th><td>${esc(b[1])}</td>` : '<th></th><td></td>'}</tr>`,
+    );
+  }
+  const people = [details.preparedBy, details.checkedBy, details.approvedBy].map(text);
+  const pageHeader = [project.name, text(details.documentNo), `Rev. ${revision}`].filter(Boolean).join(' · ');
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(project.name)} - hydraulic report</title>
-<style>${styles(cssString(`${project.name} · Hydraulic analysis report`))}</style>
+<title>${esc(project.name)} - hydraulic analysis report - ${esc(COMPANY)}</title>
+<style>${styles(cssString(pageHeader), cssString(`${COMPANY} · Hydraulic analysis report`))}</style>
 </head>
 <body>
 <div class="toolbar"><button onclick="window.print()">Print or save as PDF</button></div>
-<header class="doc-head">
-  <div class="doc-kind">Fire hydrant system · Hydraulic analysis report</div>
-  <h1>${esc(project.name)}</h1>
-  <dl class="doc-meta">${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
-  <ol class="contents">${sections.map((s, i) => `<li><a href="#${s.id}"><b>${i + 1}</b>${esc(s.title)}</a></li>`).join('')}</ol>
+<header class="letterhead" id="letterhead">
+  <div class="company">${esc(COMPANY)}</div>
+  <div class="doc-type">Hydraulic analysis report<span>Fire hydrant system</span></div>
 </header>
+<div class="title-block">
+  <div class="eyebrow">Project</div>
+  <h1>${esc(project.name)}</h1>
+  <table class="doc-control"><tbody>${controlRows.join('')}</tbody></table>
+  <table class="signoff">
+    <thead><tr><th></th><th>Prepared by</th><th>Checked by</th><th>Approved by</th></tr></thead>
+    <tbody>
+      <tr><th>Name</th>${people.map((p) => `<td>${esc(p)}</td>`).join('')}</tr>
+      <tr class="sign"><th>Signature</th><td></td><td></td><td></td></tr>
+      <tr><th>Date</th><td>${people[0] ? esc(date) : ''}</td><td></td><td></td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="contents-block">
+  <h2>Contents</h2>
+  <ol class="contents">${sections.map((s, i) => `<li><a href="#${s.id}"><b>${i + 1}</b>${esc(s.title)}</a></li>`).join('')}</ol>
+</div>
 ${sections.map((s, i) => `<section id="${s.id}"><h2><b>${i + 1}</b>${esc(s.title)}</h2>\n${s.body}\n</section>`).join('\n')}
-<div class="limitations"><strong>Limitations.</strong> This is a steady-state hydraulic analysis; transient effects such as water hammer are not included. The minimum pressures and flows used are listed under Design basis and should be confirmed against the applicable code (NBC 2016 Part 4, TAC, IS 13039, NFPA 14/24). Any change to the layout, pump or design criteria requires the analysis to be repeated.</div>
+<p class="end">End of report</p>
 </body>
 </html>`;
 }
