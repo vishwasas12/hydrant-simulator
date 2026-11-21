@@ -145,11 +145,11 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2 C7 8 5 11.5 5 15 a7 7 0 0 0 14 0 C19 11.5 17 8 12 2 Z" fill="var(--accent)" />
-          </svg>
-          <strong>Hydrant Network</strong>
-          <span className="project-name" data-testid="project-name">{project.name}</span>
+          <strong className="brand-company">{COMPANY}</strong>
+          <span className="brand-product">{PRODUCT}</span>
+          <span className="project-name" data-testid="project-name" title={project.name}>
+            {project.name}
+          </span>
         </div>
         <div className="topbar-actions">
           <button className="btn" onClick={undo} disabled={past.length === 0} title="Undo (Ctrl+Z)" data-testid="undo">

@@ -9,6 +9,7 @@
   --line-soft: #e8e6df;
   --grid: #eceae3;
   --accent: #c8322b;
+  --brand: #16325c;
   --select: #2a78d6;
   --path-halo: #f7c948;
   --good: #0a7f0a;
@@ -68,8 +69,18 @@ textarea {
   min-width: 0;
 }
 
-.brand strong {
-  font-weight: 600;
+.brand-company {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+.brand-product {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -80,6 +91,12 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 1100px) {
+  .brand-product {
+    display: none;
+  }
 }
 
 .topbar-actions {
