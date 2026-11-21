@@ -7,7 +7,7 @@ import { reportDetails } from '../model/defaults';
 import { countedFittings, type AutoFitting } from '../model/junctions';
 import { COMPANY } from './company';
 import type { Fitting, NodeKind, Outlet, Project, Pump, ReportDetails, Scenario } from '../model/types';
-import { PressureProfileChart, profileData, pumpSystemData, PumpSystemChart } from '../panels/charts';
+import { PressureProfileChart, profileData } from '../panels/charts';
 import type { Column } from '../panels/DataTable';
 import {
   criticalPath,
@@ -1309,20 +1309,14 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
   add('inputs', 'Design inputs', inputsSection(project));
   if (results.ok) add('results', 'Hydraulic results', resultsSection(project, results, path));
 
-  const pumpData = pumpSystemData(project, results);
-  const profile = path ? profileData(path, results, project.pumps[0]?.label ?? 'Pump') : null;
-  const charts: string[] = [];
-  if (pumpData) {
-    charts.push(
-      `<h3>Pump and system curves</h3><div class="chart" id="chart-pump">${renderToStaticMarkup(<PumpSystemChart data={pumpData} width={900} height={320} />)}</div>`,
-    );
-  }
+  const profile = path ?profileData(path, results, project.pumps[0]?.label ?? 'Pump') : null;
   if (profile) {
-    charts.push(
-      `<h3>Pressure along the critical path</h3><div class="chart" id="chart-profile">${renderToStaticMarkup(<PressureProfileChart data={profile} width={900} height={300} />)}</div>`,
+    add(
+      'charts',
+      'Pressure along the critical path',
+      `<div class="chart" id="chart-profile">${renderToStaticMarkup(<PressureProfileChart data={profile} width={900} height={330} />)}</div>`,
     );
   }
-  if (charts.length > 0) add('charts', 'Performance charts', charts.join('\n'));
 
   if (requirement.length > 0) {
     add('requirement', `Individual ${outletNoun(requirement.map((r) => r.kind), 1)} check`, requirementSection(requirement));

@@ -65,7 +65,7 @@ describe('client report', () => {
     const p = small();
     p.pumps = [];
     const titles = sectionTitles(report(p)).map(([, t]) => t);
-    expect(titles).not.toContain('Performance charts');
+    expect(titles).not.toContain('Pressure along the critical path');
     expect(titles).not.toContain('Individual hydrant check');
     expect(titles).toContain('Network inventory');
   });

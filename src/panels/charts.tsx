@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import {
   CartesianGrid,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -239,6 +240,26 @@ export function profileData(path: CriticalPath, results: SolveResults, pumpLabel
   return { rows, requiredBar: target?.requiredPressureBar ?? null };
 }
 
+/**
+ * Indices of the points whose names fit without overlapping, given the
+ * plot's width in pixels. The first and last points are always named.
+ */
+export function labelledPoints(distances: number[], axisMax: number, plotWidth: number, gapPx = 16): Set<number> {
+  const shown: number[] = [];
+  const px = (d: number) => (d / axisMax) * plotWidth;
+  distances.forEach((d, i) => {
+    const last = shown[shown.length - 1];
+    if (last === undefined || px(d) - px(distances[last]) >= gapPx) shown.push(i);
+  });
+  const end = distances.length - 1;
+  if (end > 0 && shown[shown.length - 1] !== end) {
+    // Make room for the outlet at the end of the path.
+    while (shown.length > 1 && px(distances[end]) - px(distances[shown[shown.length - 1]]) < gapPx) shown.pop();
+    shown.push(end);
+  }
+  return new Set(shown);
+}
+
 export function PressureProfileChart({
   data,
   width,
@@ -250,8 +271,30 @@ export function PressureProfileChart({
 }) {
   const x = niceAxis(Math.max(...data.rows.map((r) => r.distance)));
   const y = niceAxis(Math.max(...data.rows.map((r) => r.pressure), data.requiredBar ?? 0));
+  const margin = { top: 34, right: 30, bottom: 18, left: 4 };
+  // The panel chart is responsive; assume a typical width there.
+  const plotWidth = (width ?? 560) - margin.left - margin.right - 44;
+  const named = labelledPoints(data.rows.map((r) => r.distance), x.max, plotWidth);
+  const nodeLabel = (props: { x?: number | string; y?: number | string; index?: number; value?: unknown }) => {
+    if (props.index === undefined || !named.has(props.index)) return null;
+    const px = Number(props.x);
+    const py = Number(props.y);
+    return (
+      <text
+        x={px}
+        y={py}
+        dx={3}
+        dy={-6}
+        fontSize={10}
+        fill={CHART.ink}
+        transform={`rotate(-40 ${px} ${py})`}
+      >
+        {String(props.value)}
+      </text>
+    );
+  };
   const chart = (
-    <LineChart width={width} height={height} data={data.rows} margin={{ top: 10, right: 18, bottom: 18, left: 4 }}>
+    <LineChart width={width} height={height} data={data.rows} margin={margin}>
       <CartesianGrid stroke={CHART.grid} vertical={false} />
       <XAxis
         dataKey="distance"
@@ -290,7 +333,9 @@ export function PressureProfileChart({
           label={{ value: `Minimum ${data.requiredBar} bar`, position: 'insideBottomRight', fontSize: 11, fill: CHART.critical }}
         />
       )}
-      <Line dataKey="pressure" stroke={CHART.series1} strokeWidth={2} dot={{ r: 2.5, fill: CHART.series1 }} isAnimationActive={false} />
+      <Line dataKey="pressure" stroke={CHART.series1} strokeWidth={2} dot={{ r: 2.5, fill: CHART.series1 }} isAnimationActive={false}>
+        <LabelList dataKey="label" content={nodeLabel} />
+      </Line>
     </LineChart>
   );
   if (width !== undefined) return chart;
