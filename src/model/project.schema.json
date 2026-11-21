@@ -123,6 +123,7 @@
         "frictionModel": { "enum": ["hazenWilliams", "darcyWeisbach"] },
         "fittingMethod": { "enum": ["equivalentLength", "kValue"] },
         "applyCFactorToFittings": { "type": "boolean" },
+        "autoFittings": { "type": "boolean" },
         "velocityLimitMs": { "type": "number" },
         "kinematicViscosityM2s": { "type": "number" },
         "gravity": { "type": "number" },

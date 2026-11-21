@@ -619,6 +619,18 @@ textarea:focus-visible {
   margin-bottom: 4px;
 }
 
+.fitting-row.drawn {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  font-size: 12px;
+}
+
+.fitting-group {
+  margin: 8px 0 4px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .fitting-row .qty {
   font-family: var(--mono);
   font-size: 12px;

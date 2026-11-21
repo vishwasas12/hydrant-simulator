@@ -1,4 +1,5 @@
 import { DEFAULT_C, DEFAULT_HOSE_REEL, DEFAULT_HYDRANT, DEFAULT_ROUGHNESS_MM, DEFAULT_SETTINGS } from '../model/defaults';
+import { countedFittings, pipeSize } from '../model/junctions';
 import { C_FACTORS, FITTING_TABLE, internalDiameterFor, MATERIAL_TABLE } from '../model/tables';
 import type { Outlet, Project } from '../model/types';
 import { curvePoints, fitPumpCurve, lookupBySize, VALVE_FITTING } from '../solver';
@@ -45,6 +46,13 @@ export function buildAssumptions(project: Project): Assumption[] {
   add(method, 'Friction model', s.frictionModel === 'hazenWilliams' ? 'Hazen-Williams' : 'Darcy-Weisbach with Swamee-Jain', SPEC, s.frictionModel !== DEFAULT_SETTINGS.frictionModel);
   add(method, 'Hazen-Williams form', 'hf = 10.67 L_eq Q^1.852 / (C^1.852 D^4.87)', 'SI form, Q in m³/s, D in m');
   add(method, 'Fitting method', s.fittingMethod === 'equivalentLength' ? 'Equivalent length' : 'K value, h = K V²/2g', SPEC, s.fittingMethod !== DEFAULT_SETTINGS.fittingMethod);
+  add(
+    method,
+    'Tees, bends and reducers',
+    s.autoFittings ? 'Found from the drawing at each junction' : 'Only those entered on each pipe',
+    s.autoFittings ? `${ENGINEERING}: branch loss on the branch pipe, run loss on one run pipe, bend and reducer on the smaller pipe` : 'User entry',
+    !s.autoFittings,
+  );
   add(method, 'Scale L_eq for C other than 120', s.applyCFactorToFittings ? 'Yes' : 'No', 'NFPA 13 multipliers', s.applyCFactorToFittings !== DEFAULT_SETTINGS.applyCFactorToFittings);
   add(method, 'Velocity limit', `${s.velocityLimitMs} m/s`, SPEC, s.velocityLimitMs !== DEFAULT_SETTINGS.velocityLimitMs);
   add(method, 'Head convergence tolerance', `${s.headToleranceM} m`, ENGINEERING, s.headToleranceM !== DEFAULT_SETTINGS.headToleranceM);
@@ -70,18 +78,17 @@ export function buildAssumptions(project: Project): Assumption[] {
     );
   }
 
-  const usedSizes = [
-    ...new Set(project.pipes.filter((p) => p.fittings.length > 0 || (p.valves ?? []).length > 0).map((p) => (typeof p.nominalMm === 'number' ? p.nominalMm : p.internalDiameterMm))),
-  ].sort((a, b) => a - b);
+  const counted = countedFittings(project);
   const fittings = 'Fittings in use';
   for (const row of project.tables.fittings) {
-    const inUse = project.pipes.some(
-      (p) => p.fittings.some((f) => f.type === row.type) || (p.valves ?? []).some((v) => VALVE_FITTING[v.type] === row.type),
+    const pipesWith = project.pipes.filter(
+      (p) => (counted.get(p.id) ?? []).some((f) => f.type === row.type) || (p.valves ?? []).some((v) => VALVE_FITTING[v.type] === row.type),
     );
-    if (!inUse) continue;
+    if (pipesWith.length === 0) continue;
+    const sizes = [...new Set(pipesWith.map(pipeSize))].sort((a, b) => a - b);
     const original = FITTING_TABLE.find((r) => r.type === row.type);
     const changed = JSON.stringify(original?.leqM) !== JSON.stringify(row.leqM) || JSON.stringify(original?.k) !== JSON.stringify(row.k);
-    const value = usedSizes.map((size) => `${size}: ${lookupBySize(row.leqM, size).toFixed(1)} m / K ${lookupBySize(row.k, size).toFixed(2)}`).join('; ');
+    const value = sizes.map((size) => `${size}: ${lookupBySize(row.leqM, size).toFixed(1)} m / K ${lookupBySize(row.k, size).toFixed(2)}`).join('; ');
     add(fittings, row.name, value, row.source, changed);
   }
   const customs = project.pipes.flatMap((p) => p.fittings.filter((f) => f.type === 'custom').map((f) => ({ p, f })));
