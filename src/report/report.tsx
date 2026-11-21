@@ -36,15 +36,13 @@ import {
   type PipeScheduleRow,
   type ValveScheduleRow,
 } from './inventory';
+import { paginateScript, reportStyles } from './pages';
 import { networkSnapshot } from './snapshot';
 
 type Cell = string | number | null;
 
 const esc = (v: unknown): string =>
   String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
-
-/** A quoted CSS string that cannot close the style element. */
-const cssString = (s: string): string => `"${s.replace(/[\\"]/g, '\\$&').replace(/</g, '\\3c ').replace(/[\r\n]+/g, ' ')}"`;
 
 /** A number with fixed decimals and Indian digit grouping, e.g. 3,847 or 1,23,456.5. */
 const num = (v: number, decimals = 0): string =>
@@ -1045,124 +1043,6 @@ ${list(limitations)}
 }
 
 /* ------------------------------------------------------------------ */
-/* Styles                                                              */
-/* ------------------------------------------------------------------ */
-
-/** Page styles. The two arguments are CSS strings for the running page header and footer. */
-const styles = (pageHeader: string, footer: string) => `
-  :root { --ink: #1c1b19; --muted: #5d5c58; --line: #d4d2ca; --rule: #e6e4dd; --soft: #f4f4f1; --brand: #16325c; }
-  * { box-sizing: border-box; }
-  html { background: #e9e8e3; }
-  body { margin: 24px auto; max-width: 1040px; padding: 0 52px 52px; color: var(--ink); background: #fff;
-    font: 12.5px/1.55 'Segoe UI', system-ui, -apple-system, sans-serif; box-shadow: 0 1px 6px rgba(0,0,0,.08);
-    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .toolbar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; margin: 0 -52px 28px; padding: 10px 52px;
-    background: rgba(255,255,255,.95); border-bottom: 1px solid var(--line); }
-  .toolbar button { height: 30px; padding: 0 14px; font: inherit; cursor: pointer; background: var(--brand); color: #fff; border: 0; border-radius: 4px; }
-
-  .letterhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 12px; border-bottom: 3px solid var(--brand); }
-  .company { font-size: 28px; font-weight: 700; letter-spacing: .24em; color: var(--brand); line-height: 1; }
-  .doc-type { text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--brand); }
-  .doc-type span { display: block; font-weight: 400; letter-spacing: .06em; color: var(--muted); }
-  .title-block { padding: 22px 0 6px; }
-  .title-block .eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  h1 { margin: 4px 0 4px; font-size: 26px; font-weight: 600; line-height: 1.25; }
-  .doc-control { margin: 16px 0 0; }
-  .doc-control th { width: 17%; background: var(--soft); font-weight: 600; border: 1px solid var(--line); }
-  .doc-control td { width: 33%; border: 1px solid var(--line); }
-  .doc-control th, .doc-control td { padding: 5px 8px; vertical-align: middle; }
-  .contents-block { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .contents-block h2 { border: 0; margin-bottom: 4px; }
-  .contents { margin: 0; padding: 0; list-style: none; columns: 2; column-gap: 32px; }
-  .contents li { padding: 2px 0; break-inside: avoid; border-bottom: 1px dotted var(--rule); }
-  .contents a { color: inherit; text-decoration: none; }
-  .contents b { display: inline-block; width: 26px; font-weight: 600; color: var(--brand); }
-
-  section { margin-top: 32px; }
-  h2 { display: flex; gap: 12px; margin: 0 0 10px; padding-bottom: 5px; font-size: 14.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-    color: var(--brand); border-bottom: 1.5px solid var(--brand); break-after: avoid; }
-  h2 b { font-weight: 700; }
-  h3 { margin: 18px 0 6px; font-size: 12.5px; font-weight: 600; break-after: avoid; }
-  p { margin: 6px 0; }
-  .lead { margin-bottom: 10px; }
-  .note { font-size: 11px; color: var(--muted); }
-  .verdict { margin: 0 0 14px; padding: 11px 14px; border-left: 4px solid; font-size: 14.5px; font-weight: 600; }
-  .verdict.pass { background: #e9f3e7; border-color: #0a7a0a; color: #0a5f0a; }
-  .verdict.fail { background: #fbe9e8; border-color: #b3261e; color: #8f2020; }
-  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 14px; }
-  .fact { padding: 9px 12px; background: var(--soft); border-left: 3px solid var(--brand); break-inside: avoid; }
-  .fact span { display: block; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-  .fact strong { display: block; font-size: 16px; font-weight: 600; }
-  .fact small { display: block; font-size: 11px; color: var(--muted); }
-  .findings { margin: 6px 0 10px; padding-left: 18px; }
-  .findings li { margin: 4px 0; }
-  .drawing { padding: 6px; border: 1px solid var(--line); break-inside: avoid; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0; font-size: 11px; color: var(--muted); }
-  .legend span { display: inline-flex; align-items: center; gap: 5px; }
-
-  table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 4px 0 8px; }
-  thead { display: table-header-group; }
-  tr { break-inside: avoid; }
-  th { padding: 5px 6px; text-align: left; vertical-align: bottom; font-weight: 600; background: var(--soft); border-bottom: 1px solid var(--ink); }
-  td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--rule); }
-  td:first-child { white-space: nowrap; }
-  tfoot td { font-weight: 600; border-top: 1px solid var(--ink); border-bottom: 0; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.pass { color: #0a6b0a; font-weight: 600; }
-  td.fail { color: #a32020; font-weight: 600; }
-  .schedule td:last-child { width: 50%; }
-  .kv { width: auto; min-width: 55%; }
-  .kv th { width: 230px; padding: 3px 24px 3px 0; font-weight: 400; color: var(--muted); background: none; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  .basis td:first-child { white-space: normal; width: 24%; font-weight: 600; }
-  .basis td:last-child { width: 32%; color: var(--muted); }
-  .formulas, .notation, .basis { break-inside: avoid; }
-  .formulas td { padding: 5px 6px; vertical-align: middle; }
-  .formulas td.num { width: 28px; color: var(--muted); }
-  .formulas td:nth-child(2) { width: 34%; white-space: normal; }
-  .expr { font-family: 'Cambria Math', Cambria, 'Times New Roman', serif; font-size: 13px; font-style: italic; }
-  .notation { width: auto; min-width: 60%; }
-  .notation td.expr { width: 110px; }
-  .numbered { margin: 4px 0 10px; padding-left: 22px; }
-  .numbered li { margin: 4px 0; padding-left: 2px; }
-  .statement { margin-top: 18px; padding: 10px 12px; font-size: 11.5px; background: var(--soft); border-left: 3px solid var(--brand); }
-  .chart { margin: 6px 0 14px; break-inside: avoid; }
-  .chart svg { max-width: 100%; height: auto; }
-  .issues { margin: 6px 0 12px; padding: 8px 12px 8px 30px; background: #fdf6e3; border-left: 3px solid #c98a00; }
-  .issues li { margin: 2px 0; }
-  .end { margin-top: 28px; text-align: center; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
-
-  @media (max-width: 720px) {
-    body { margin: 0; padding: 0 16px 32px; }
-    .toolbar { margin: 0 -16px 20px; padding: 10px 16px; }
-    .letterhead { flex-direction: column; align-items: flex-start; }
-    .doc-type { text-align: left; }
-    .company { font-size: 22px; }
-    .facts { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
-    .contents { columns: 1; }
-    table { display: block; overflow-x: auto; }
-  }
-  @media print {
-    html { background: none; }
-    body { margin: 0; max-width: none; padding: 0; font-size: 11.5px; box-shadow: none; }
-    .toolbar { display: none; }
-    section { margin-top: 22px; }
-    .contents-block { break-after: page; }
-  }
-  @page {
-    size: A4;
-    margin: 16mm 13mm 16mm;
-    @top-left { content: ${cssString(COMPANY)}; font: 700 9px 'Segoe UI', sans-serif; letter-spacing: .2em; color: #16325c; }
-    @top-right { content: ${pageHeader}; font: 9px 'Segoe UI', sans-serif; color: #777; }
-    @bottom-left { content: ${footer}; font: 9px 'Segoe UI', sans-serif; color: #777; }
-    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9px 'Segoe UI', sans-serif; color: #777; }
-  }
-  @page :first {
-    @top-left { content: none; }
-    @top-right { content: none; }
-  }
-`;
-
-/* ------------------------------------------------------------------ */
 /* Report                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -1301,9 +1181,9 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
   add(
     'layout',
     'Network layout',
-    `<div class="drawing">${networkSnapshot(project, results, path)}</div>${legendHtml(project, results, path)}${
+    `<div class="figure"><div class="drawing">${networkSnapshot(project, results, path)}</div>${legendHtml(project, results, path)}${
       open.length > 0 ? '<p class="note">Pressures shown next to flowing outlets are residual pressures in the case analysed.</p>' : ''
-    }`,
+    }</div>`,
   );
   add('inventory', 'Network inventory', inventorySection(project, results));
   add('inputs', 'Design inputs', inputsSection(project));
@@ -1314,7 +1194,7 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
     add(
       'charts',
       'Pressure along the critical path',
-      `<div class="chart" id="chart-profile">${renderToStaticMarkup(<PressureProfileChart data={profile} width={900} height={330} />)}</div>`,
+      `<div class="chart" id="chart-profile">${renderToStaticMarkup(<PressureProfileChart data={profile} width={680} height={300} />)}</div>`,
     );
   }
 
@@ -1362,10 +1242,13 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(project.name)} - hydraulic analysis report - ${esc(COMPANY)}</title>
-<style>${styles(cssString(pageHeader), cssString(`${COMPANY} · Hydraulic analysis report`))}</style>
+<style>${reportStyles}</style>
 </head>
 <body>
-<div class="toolbar"><button onclick="window.print()">Print or save as PDF</button></div>
+<div class="toolbar"><span class="status" id="status">Laying out A4 pages…</span><button onclick="window.print()">Print or save as PDF</button></div>
+<template id="page-template"><div class="page"><div class="running"><span class="brand">${esc(COMPANY)}</span><span>${esc(pageHeader)}</span></div><div class="page-body"></div><div class="folio"><span>${esc(COMPANY)} · Hydraulic analysis report</span><span class="page-no"></span></div></div></template>
+<div id="source">
+<div id="cover">
 <header class="letterhead" id="letterhead">
   <div class="company">${esc(COMPANY)}</div>
   <div class="doc-type">Hydraulic analysis report<span>Fire hydrant system</span></div>
@@ -1377,10 +1260,16 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
 </div>
 <div class="contents-block">
   <h2>Contents</h2>
-  <ol class="contents">${sections.map((s, i) => `<li><a href="#${s.id}"><b>${i + 1}</b>${esc(s.title)}</a></li>`).join('')}</ol>
+  <ol class="contents">${sections
+    .map((s, i) => `<li><a href="#${s.id}"><b>${i + 1}</b><span>${esc(s.title)}</span><span class="dots"></span><span class="pg"></span></a></li>`)
+    .join('')}</ol>
+</div>
 </div>
 ${sections.map((s, i) => `<section id="${s.id}"><h2><b>${i + 1}</b>${esc(s.title)}</h2>\n${s.body}\n</section>`).join('\n')}
 <p class="end">End of report</p>
+</div>
+<div id="pages"></div>
+<script>${paginateScript}</script>
 </body>
 </html>`;
 }
