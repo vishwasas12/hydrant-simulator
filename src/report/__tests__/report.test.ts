@@ -66,7 +66,7 @@ describe('client report', () => {
     p.pumps = [];
     const titles = sectionTitles(report(p)).map(([, t]) => t);
     expect(titles).not.toContain('Performance charts');
-    expect(titles.some((t) => t.includes('flowing alone'))).toBe(false);
+    expect(titles).not.toContain('Individual hydrant check');
     expect(titles).toContain('Network inventory');
   });
 
@@ -149,6 +149,30 @@ describe('client report', () => {
     expect(method).not.toMatch(/Swamee|Fixed-demand/);
     const titles = sectionTitles(html).map(([, t]) => t);
     expect(titles[titles.length - 1]).toBe('Method, assumptions and limitations');
+  });
+
+  it('opens with an executive summary, introduction and design basis, with cross-references filled in', () => {
+    const html = report(small());
+    const titles = sectionTitles(html).map(([, t]) => t);
+    expect(titles.slice(0, 3)).toEqual(['Executive summary', 'Introduction', 'Design basis']);
+    expect(titles).toContain('Individual hydrant check');
+    expect(html).not.toContain('{{section');
+    const intro = html.split('<section id="introduction">')[1].split('</section>')[0];
+    const basis = titles.indexOf('Design basis') + 1;
+    expect(intro).toContain(`criteria are set out in Section ${basis}`);
+    expect(intro).not.toMatch(/\(Section \)/);
+  });
+
+  it('groups digits in flows and lists identical hydrants on one line', () => {
+    const p = small();
+    for (const n of p.nodes) if (n.outlet) Object.assign(n.outlet, { model: 'fixed', fixedFlowLpm: 1500 });
+    const html = report(p);
+    const summary = html.split('<section id="summary">')[1].split('</section>')[0];
+    expect(summary).toContain('1,500 LPM');
+    const inputs = html.split('<section id="inputs">')[1].split('</section>')[0];
+    const hydrants = inputs.split('<h3>Hydrants</h3>')[1].split('</table>')[0];
+    expect(hydrants.match(/<tr>/g)?.length).toBe(2); // header and one group
+    expect(hydrants).toContain('<td class="num">2</td>');
   });
 
   it('escapes the project name in the page footer', () => {

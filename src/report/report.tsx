@@ -6,7 +6,7 @@ import { CUSTOM_CLASS, DIAMETER_CLASSES, diameterClass, STATUS } from '../canvas
 import { reportDetails } from '../model/defaults';
 import { countedFittings, type AutoFitting } from '../model/junctions';
 import { COMPANY } from './company';
-import type { Fitting, Outlet, Project, Pump, Scenario } from '../model/types';
+import type { Fitting, NodeKind, Outlet, Project, Pump, ReportDetails, Scenario } from '../model/types';
 import { PressureProfileChart, profileData, pumpSystemData, PumpSystemChart } from '../panels/charts';
 import type { Column } from '../panels/DataTable';
 import {
@@ -46,11 +46,54 @@ const esc = (v: unknown): string =>
 /** A quoted CSS string that cannot close the style element. */
 const cssString = (s: string): string => `"${s.replace(/[\\"]/g, '\\$&').replace(/</g, '\\3c ').replace(/[\r\n]+/g, ' ')}"`;
 
+/** A number with fixed decimals and Indian digit grouping, e.g. 3,847 or 1,23,456.5. */
+const num = (v: number, decimals = 0): string =>
+  v.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+
+/** A fraction as a percentage with a true minus sign: −12.5 %. */
+const percent = (fraction: number): string => `${(fraction * 100).toFixed(1).replace(/^-/, '−')} %`;
+
 /** Fixed decimals, or null when there is no value. */
 const fix = (v: number | null | undefined, d: number): string | null =>
   v === null || v === undefined || !Number.isFinite(v) ? null : v.toFixed(d);
 
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Labels in natural order with runs of three or more consecutive numbers
+ * written as a range: "HV 1–HV 17, HV 19–HV 26".
+ */
+function labelRanges(labels: string[]): string {
+  const sorted = [...labels].sort(naturalCompare);
+  const parts: string[] = [];
+  let run: { prefix: string; start: number; end: number; first: string; last: string } | null = null;
+  const flush = () => {
+    if (!run) return;
+    const length = run.end - run.start + 1;
+    if (length >= 3) parts.push(`${run.first}–${run.last}`);
+    else if (length === 2) parts.push(run.first, run.last);
+    else parts.push(run.first);
+    run = null;
+  };
+  for (const label of sorted) {
+    const m = label.match(/^(.*?)(\d+)$/);
+    if (!m) {
+      flush();
+      parts.push(label);
+      continue;
+    }
+    const [prefix, n] = [m[1], Number(m[2])];
+    if (run && run.prefix === prefix && n === run.end + 1) {
+      run.end = n;
+      run.last = label;
+    } else {
+      flush();
+      run = { prefix, start: n, end: n, first: label, last: label };
+    }
+  }
+  flush();
+  return parts.join(', ');
+}
 
 function listText(labels: string[], max = 12): string {
   return labels.length <= max ? labels.join(', ') : `${labels.slice(0, max).join(', ')} and ${labels.length - max} more`;
@@ -129,10 +172,10 @@ function dischargeText(o: Outlet): string {
 function curveText(p: Pump): string {
   const c = p.curve;
   if (c.kind === 'threePoint') {
-    return `Shut-off ${c.shutoffHeadM} m; rated ${c.ratedHeadM} m at ${c.ratedFlowLpm} LPM; ${c.overloadHeadM} m at ${c.overloadFlowLpm} LPM`;
+    return `Shut-off ${c.shutoffHeadM} m; rated ${c.ratedHeadM} m at ${num(c.ratedFlowLpm)} LPM; ${c.overloadHeadM} m at ${num(c.overloadFlowLpm)} LPM`;
   }
   if (c.kind === 'constant') return `Constant head ${c.headM} m`;
-  return c.points.map((x) => `${x.headM} m at ${x.flowLpm} LPM`).join('; ');
+  return c.points.map((x) => `${x.headM} m at ${num(x.flowLpm)} LPM`).join('; ');
 }
 
 /** "1 × 90° elbow", or "Tee (branch) at J3" for one found in the drawing. */
@@ -157,6 +200,46 @@ function clientMessage(message: string): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Introduction                                                        */
+/* ------------------------------------------------------------------ */
+
+/** Purpose and scope, naming only the analyses the report contains. */
+function introductionSection(
+  project: Project,
+  details: ReportDetails,
+  flowing: string[],
+  requirement: RequirementRow[],
+  hasCapacity: boolean,
+  hasScenarios: boolean,
+): string {
+  const kinds = project.nodes.filter((n) => n.outlet).map((n) => n.kind);
+  const many = outletNoun(kinds.length ? kinds : ['hydrant'], 2);
+  // Trailing full stops are dropped so "Pvt. Ltd." does not end the sentence twice.
+  const where = [details.site.trim(), details.client.trim() ? `prepared for ${details.client.trim()}` : '']
+    .filter(Boolean)
+    .join(', ')
+    .replace(/\.+$/, '');
+  const checked = requirement.length;
+  const checkedNoun = outletNoun(requirement.map((r) => r.kind), checked);
+  const scope = [
+    flowing.length === 0
+      ? `the network with all ${many} closed, giving the static pressures (Section {{section:results}})`
+      : flowing.length === kinds.length
+        ? `the operating case with all ${many} flowing (Section {{section:results}})`
+        : `the operating case with ${labelRanges(flowing)} flowing and the other ${many} closed (Section {{section:results}})`,
+    ...(checked > 0
+      ? [`${checked === 1 ? `the ${checkedNoun}` : `each of the ${checked} ${checkedNoun}`} flowing on its own (Section {{section:requirement}})`]
+      : []),
+    ...(hasCapacity ? ['combinations of hydrants flowing at the same time (Section {{section:capacity}})'] : []),
+    ...(hasScenarios ? [`${project.scenarios.length === 1 ? 'one further operating scenario' : `${project.scenarios.length} further operating scenarios`} (Section {{section:scenarios}})`] : []),
+  ];
+  return `<p>This report presents the steady-state hydraulic analysis of the fire hydrant network for ${esc(project.name)}${where ? `, ${esc(where)}` : ''}. Its purpose is to establish whether the fire pump and pipework deliver the minimum residual pressure and flow required at the ${esc(many)}, and to report the pressures, flows and velocities throughout the network.</p>
+<p>The analysis covers:</p>
+<ul class="findings">${scope.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+<p>The design criteria are set out in Section {{section:basis}}, the network and its inputs in Sections {{section:layout}} to {{section:inputs}}, and the method of analysis, assumptions and limitations in Section {{section:method}}.</p>`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Network inventory                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -178,7 +261,7 @@ function inventorySection(project: Project, results: SolveResults): string {
     ['Junctions', String(totals.junctions), ''],
     ['Tees', String(allTees), totals.takeOffTees > 0 ? `${totals.tees} at junctions, ${totals.takeOffTees} for outlets` : ''],
     ['Bends', String(totals.bends), ''],
-    ['Pipework', `${totalLength.toFixed(0)} m`, plural(project.pipes.length, 'pipe')],
+    ['Pipework', `${num(totalLength)} m`, plural(project.pipes.length, 'pipe')],
   ];
   if (totals.crosses > 0) facts.splice(2, 0, ['Crosses', String(totals.crosses), '']);
   if (hydrants > 0) facts.push(['Hydrants', String(hydrants), '']);
@@ -194,10 +277,10 @@ function inventorySection(project: Project, results: SolveResults): string {
       col<PipeScheduleRow>('size', 'Pipe size', sizeLabel),
       col<PipeScheduleRow>('id', 'Internal diameter, mm', (r) => r.internalDiameters.join(', '), true),
       col<PipeScheduleRow>('n', 'Number of pipes', (r) => r.count, true),
-      col<PipeScheduleRow>('l', 'Total length, m', (r) => r.lengthM.toFixed(1), true),
+      col<PipeScheduleRow>('l', 'Total length, m', (r) => num(r.lengthM, 1), true),
     ],
     pipes,
-    { totals: pipes.length > 1 ? { size: 'Total', n: project.pipes.length, l: totalLength.toFixed(1) } : undefined },
+    { totals: pipes.length > 1 ? { size: 'Total', n: project.pipes.length, l: num(totalLength, 1) } : undefined },
   );
 
   const fittingTable =
@@ -207,7 +290,7 @@ function inventorySection(project: Project, results: SolveResults): string {
             col<FittingScheduleRow>('name', 'Fitting', (r) => r.name),
             col<FittingScheduleRow>('size', 'Size, NB', (r) => r.size),
             col<FittingScheduleRow>('q', 'Quantity', (r) => r.quantity, true),
-            col<FittingScheduleRow>('at', 'Location', (r) => r.locations.join(', ')),
+            col<FittingScheduleRow>('at', 'Location', (r) => labelRanges(r.locations)),
           ],
           fittings,
           { totals: { name: 'Total', q: fittings.reduce((s, r) => s + r.quantity, 0) }, className: 'schedule' },
@@ -284,24 +367,46 @@ function inputsSection(project: Project): string {
 
   const outlets = project.nodes.filter((n) => n.outlet).sort((a, b) => naturalCompare(a.label, b.label));
   if (outlets.length > 0) {
-    type N = (typeof outlets)[number];
-    const o = (n: N) => n.outlet as Outlet;
-    const mixedKinds = new Set(outlets.map((n) => n.kind)).size > 1;
-    const anyDouble = outlets.some((n) => o(n).outlets !== 1);
-    const elevations = new Set(outlets.map((n) => n.elevationM));
-    const columns: Column<N>[] = [
-      col<N>('id', mixedKinds ? 'Outlet' : KIND_TEXT[outlets[0].kind], (n) => n.label),
-      ...(mixedKinds ? [col<N>('kind', 'Type', (n) => KIND_TEXT[n.kind])] : []),
-      col<N>('state', 'In this case', (n) => (o(n).on ? 'Flowing' : 'Closed')),
-      ...(anyDouble ? [col<N>('outlets', 'Outlets', (n) => o(n).outlets, true)] : []),
-      col<N>('model', 'Discharge', (n) => dischargeText(o(n))),
-      ...(elevations.size > 1 ? [col<N>('elev', 'Elevation, m', (n) => n.elevationM.toFixed(1), true)] : []),
-      col<N>('minp', 'Min. pressure, bar', (n) => o(n).minPressureBar, true),
-      col<N>('minq', 'Min. flow per outlet, LPM', (n) => o(n).minFlowLpm, true),
+    // One row per distinct outlet arrangement, so identical hydrants share a line.
+    interface Group {
+      kind: NodeKind;
+      labels: string[];
+      outlets: number;
+      discharge: string;
+      elevation: number;
+      minP: number;
+      minQ: number;
+    }
+    const groups = new Map<string, Group>();
+    for (const n of outlets) {
+      const o = n.outlet as Outlet;
+      const discharge = dischargeText(o);
+      const key = [n.kind, o.outlets, discharge, n.elevationM, o.minPressureBar, o.minFlowLpm].join('|');
+      const g = groups.get(key) ?? { kind: n.kind, labels: [], outlets: o.outlets, discharge, elevation: n.elevationM, minP: o.minPressureBar, minQ: o.minFlowLpm };
+      g.labels.push(n.label);
+      groups.set(key, g);
+    }
+    const rows = [...groups.values()];
+    const kinds = outlets.map((n) => n.kind);
+    const mixedKinds = new Set(kinds).size > 1;
+    const elevations = new Set(rows.map((g) => g.elevation));
+    const columns: Column<Group>[] = [
+      col<Group>('ids', mixedKinds ? 'Outlets' : outletNoun(kinds, 2).replace(/^./, (c) => c.toUpperCase()), (g) => labelRanges(g.labels)),
+      col<Group>('n', 'Number', (g) => g.labels.length, true),
+      ...(mixedKinds ? [col<Group>('kind', 'Type', (g) => KIND_TEXT[g.kind])] : []),
+      ...(rows.some((g) => g.outlets !== 1) ? [col<Group>('outlets', 'Outlets each', (g) => g.outlets, true)] : []),
+      col<Group>('model', 'Discharge', (g) => g.discharge),
+      ...(elevations.size > 1 ? [col<Group>('elev', 'Elevation, m', (g) => g.elevation.toFixed(1), true)] : []),
+      col<Group>('minp', 'Min. pressure, bar', (g) => g.minP, true),
+      col<Group>('minq', 'Min. flow per outlet, LPM', (g) => num(g.minQ), true),
     ];
-    const title = mixedKinds ? 'Hydrants and hose reels' : outlets[0].kind === 'hydrant' ? 'Hydrants' : 'Hose reels';
-    const elevationNote = elevations.size === 1 ? `<p class="note">All ${outletNoun(outlets.map((n) => n.kind), 2)} are at elevation ${[...elevations][0]} m.</p>` : '';
-    parts.push(`<h3>${title}</h3>${table(columns, outlets)}${elevationNote}`);
+    const flowing = outlets.filter((n) => n.outlet?.on).map((n) => n.label);
+    const notes = [
+      flowing.length > 0 ? `Flowing in the case analysed: ${labelRanges(flowing)}.` : `No ${outletNoun(kinds, 2)} flow in the case analysed.`,
+      elevations.size === 1 ? `All are at elevation ${[...elevations][0]} m.` : '',
+    ].filter(Boolean);
+    const title = mixedKinds ? 'Hydrants and hose reels' : outletNoun(kinds, 2).replace(/^./, (c) => c.toUpperCase());
+    parts.push(`<h3>${title}</h3>${table(columns, rows)}<p class="note">${esc(notes.join(' '))}</p>`);
   }
 
   type P = Project['pipes'][number];
@@ -314,7 +419,7 @@ function inputsSection(project: Project): string {
     col<P>('to', 'To', (p) => labels.get(p.to) ?? ''),
     col<P>('nom', 'Size, NB', (p) => (typeof p.nominalMm === 'number' ? p.nominalMm : 'Special'), true),
     col<P>('d', 'Internal dia., mm', (p) => p.internalDiameterMm, true),
-    col<P>('l', 'Length, m', (p) => p.lengthM.toFixed(1), true),
+    col<P>('l', 'Length, m', (p) => num(p.lengthM, 1), true),
     col<P>('c', 'C', (p) => p.c, true),
     ...(anyClosed ? [col<P>('status', 'Status', (p) => (p.status === 'closed' ? 'Closed' : 'Open'))] : []),
     col<P>('f', 'Fittings', (p) => (counted.get(p.id) ?? []).map((f) => fittingText(project, f)).join(', ')),
@@ -375,9 +480,9 @@ function resultsSection(project: Project, results: SolveResults, path: CriticalP
           col<NodeResult>('id', open.every((n) => n.kind === 'hydrant') ? 'Hydrant' : 'Outlet', (r) => r.label),
           col<NodeResult>('p', 'Residual pressure, bar', (r) => fix(r.pressureBar, 2), true),
           col<NodeResult>('rp', 'Required, bar', (r) => r.requiredPressureBar, true),
-          col<NodeResult>('q', 'Flow, LPM', (r) => r.outletFlowLpm.toFixed(0), true),
+          col<NodeResult>('q', 'Flow, LPM', (r) => num(r.outletFlowLpm), true),
           col<NodeResult>('rq', 'Required, LPM', (r) => r.requiredFlowLpm, true),
-          col<NodeResult>('m', 'Margin', (r) => (r.margin === null ? null : `${(r.margin * 100).toFixed(1)} %`), true),
+          col<NodeResult>('m', 'Margin', (r) => (r.margin === null ? null : percent(r.margin)), true),
           col<NodeResult>('s', 'Result', (r) => resultText(r.status)),
         ],
         open,
@@ -395,8 +500,9 @@ function resultsSection(project: Project, results: SolveResults, path: CriticalP
         col<NodeResult>('elev', 'Elevation, m', (r) => r.elevationM.toFixed(1), true),
         col<NodeResult>('pm', 'Pressure, m', (r) => fix(r.pressureM, 1), true),
         col<NodeResult>('pb', 'Pressure, bar', (r) => fix(r.pressureBar, 2), true),
-        col<NodeResult>('q', 'Outflow, LPM', (r) => (r.outflowLpm > 0.05 ? r.outflowLpm.toFixed(0) : ''), true),
-        col<NodeResult>('s', 'Result', (r) => (r.status === 'pass' || r.status === 'fail' ? resultText(r.status) : '')),
+        // Flowing outlets are reported above, so only other draw-offs (base demands) appear here.
+        col<NodeResult>('q', 'Other draw-off, LPM', (r) =>
+          r.status !== 'pass' && r.status !== 'fail' && r.outflowLpm > 0.05 ? num(r.outflowLpm) : '', true),
       ],
       byLabel(results.nodes),
       { dropEmpty: true },
@@ -419,11 +525,11 @@ function resultsSection(project: Project, results: SolveResults, path: CriticalP
           : []),
         col<PipeResult>('dir', 'Flow direction', (r) => (flowing(r) ? `${labels.get(r.upstreamId)} → ${labels.get(r.downstreamId)}` : 'No flow')),
         col<PipeResult>('d', 'Internal dia., mm', (r) => r.diameterMm, true),
-        col<PipeResult>('q', 'Flow, LPM', (r) => Math.abs(r.flowLpm).toFixed(0), true),
+        col<PipeResult>('q', 'Flow, LPM', (r) => num(Math.abs(r.flowLpm)), true),
         col<PipeResult>('v', 'Velocity, m/s', (r) => `${r.velocityMs.toFixed(2)}${r.velocityExceeded ? ' ▲' : ''}`, true),
         col<PipeResult>('hf', 'Head loss, m', (r) => r.headLossM.toFixed(2), true),
         col<PipeResult>('l100', 'Loss per 100 m', (r) => r.lossPer100M.toFixed(2), true),
-        col<PipeResult>('l', 'Length, m', (r) => r.lengthM.toFixed(1), true),
+        col<PipeResult>('l', 'Length, m', (r) => num(r.lengthM, 1), true),
         col<PipeResult>('leq', 'Equiv. length, m', (r) => r.equivalentLengthM.toFixed(1), true),
       ],
       byLabel(results.pipes),
@@ -438,9 +544,9 @@ function resultsSection(project: Project, results: SolveResults, path: CriticalP
         [
           col<CriticalPathSegment>('seg', 'From → to', (r) => `${r.fromLabel} → ${r.toLabel}`),
           col<CriticalPathSegment>('pipe', 'Pipe', (r) => r.label),
-          col<CriticalPathSegment>('l', 'Length, m', (r) => r.lengthM.toFixed(1), true),
+          col<CriticalPathSegment>('l', 'Length, m', (r) => num(r.lengthM, 1), true),
           col<CriticalPathSegment>('leq', 'Equiv. length, m', (r) => r.equivalentLengthM.toFixed(1), true),
-          col<CriticalPathSegment>('q', 'Flow, LPM', (r) => r.flowLpm.toFixed(0), true),
+          col<CriticalPathSegment>('q', 'Flow, LPM', (r) => num(r.flowLpm), true),
           col<CriticalPathSegment>('hf', 'Head loss, m', (r) => r.headLossM.toFixed(2), true),
           col<CriticalPathSegment>('p', 'Pressure at end, bar', (r) => r.pressureAfterBar.toFixed(2), true),
         ],
@@ -459,7 +565,7 @@ ${table(
   [
     col<RequirementRow>('id', noun === 'hydrant' ? 'Hydrant' : 'Outlet', (r) => r.label),
     col<RequirementRow>('res', 'Residual pressure, bar', (r) => fix(r.residualBar, 2), true),
-    col<RequirementRow>('q', 'Flow, LPM', (r) => r.flowLpm.toFixed(0), true),
+    col<RequirementRow>('q', 'Flow, LPM', (r) => num(r.flowLpm), true),
     col<RequirementRow>('minp', 'Min. pressure, bar', (r) => r.minPressureBar, true),
     col<RequirementRow>('minq', 'Min. flow, LPM', (r) => r.minFlowLpm, true),
     col<RequirementRow>('reqp', 'Pressure needed, bar', (r) => r.requiredPressureBar.toFixed(2), true),
@@ -506,7 +612,6 @@ function capacityFinding(capacity: CapacityResult): string {
 
 function capacitySection(capacity: CapacityResult): string {
   const labels = (c: Combo): string => c.members.map((m) => capacity.hydrants[m].label).join(', ');
-  const pct = (m: number) => `${(m * 100).toFixed(1)} %`;
   const items: string[] = [];
   if (capacity.maxSimultaneous > 0) {
     const exact = capacity.maxExact || capacity.method === 'exhaustive';
@@ -526,13 +631,13 @@ function capacitySection(capacity: CapacityResult): string {
   const worst = capacity.worstForK;
   if (worst) {
     items.push(
-      `Least favourable combination of ${worst.count} hydrants (${esc(labels(worst))}): ${worst.pass ? 'meets' : 'does not meet'} the requirement, margin ${pct(worst.margin)}.`,
+      `Least favourable combination of ${worst.count} hydrants (${esc(labels(worst))}): ${worst.pass ? 'meets' : 'does not meet'} the requirement, margin ${percent(worst.margin)}.`,
     );
   }
   const farthest = capacity.kFarthest;
   if (farthest) {
     items.push(
-      `The ${farthest.count} most remote hydrants together (${esc(labels(farthest))}): ${farthest.pass ? 'meet' : 'do not meet'} the requirement, margin ${pct(farthest.margin)}.`,
+      `The ${farthest.count} most remote hydrants together (${esc(labels(farthest))}): ${farthest.pass ? 'meet' : 'do not meet'} the requirement, margin ${percent(farthest.margin)}.`,
     );
   }
   const excluded =
@@ -540,7 +645,7 @@ function capacitySection(capacity: CapacityResult): string {
       ? `<p class="note">Not included, as they have no supply path from the pump: ${esc(capacity.excluded.join(', '))}.</p>`
       : '';
   const rows = capacity.combos.slice(0, 25);
-  return `<p class="lead">Combinations of hydrants flowing together were analysed on the pump curve. ${capacity.evaluated.toLocaleString()} combinations were solved${capacity.method === 'exhaustive' ? ', covering every possible combination' : ''}.</p>
+  return `<p class="lead">Combinations of hydrants flowing together were analysed on the pump curve. ${num(capacity.evaluated)} combinations were solved${capacity.method === 'exhaustive' ? ', covering every possible combination' : ''}.</p>
 <ul class="findings">${items.map((i) => `<li>${i}</li>`).join('')}</ul>
 ${excluded}
 <h3>Least favourable combinations</h3>
@@ -549,8 +654,8 @@ ${table(
     col<Combo>('k', 'Flowing', (c) => c.count, true),
     col<Combo>('members', 'Hydrants', (c) => labels(c)),
     col<Combo>('crit', 'Critical hydrant', (c) => capacity.hydrants[c.critical].label),
-    col<Combo>('margin', 'Margin', (c) => pct(c.margin), true),
-    col<Combo>('q', 'Pump flow, LPM', (c) => c.pumpFlowLpm.toFixed(0), true),
+    col<Combo>('margin', 'Margin', (c) => percent(c.margin), true),
+    col<Combo>('q', 'Pump flow, LPM', (c) => num(c.pumpFlowLpm), true),
     col<Combo>('h', 'Pump head, m', (c) => c.pumpHeadM.toFixed(1), true),
     col<Combo>('status', 'Result', (c) => passFail(c.pass)),
     col<Combo>('why', 'Reason', (c) => comboReason(c.reason)),
@@ -575,6 +680,16 @@ function scenarioChanges(project: Project, s: Scenario): string {
   if (s.globalC !== undefined) parts.push(`C = ${s.globalC} on all pipes`);
   else if (s.pipeC && Object.keys(s.pipeC).length > 0) parts.push(`C changed on ${plural(Object.keys(s.pipeC).length, 'pipe')}`);
   return parts.join('; ');
+}
+
+/** A comparison value with the decimals its unit calls for: 7.53 bar, 3,847 LPM, 110.0 m. */
+function compareValue(label: string, v: string | number): string {
+  if (typeof v !== 'number') return v;
+  if (label.endsWith(', bar')) return v.toFixed(2);
+  if (label.endsWith(', m/s')) return v.toFixed(2);
+  if (label.endsWith(', LPM')) return num(v);
+  if (label.endsWith(', m')) return v.toFixed(1);
+  return num(v);
 }
 
 function scenariosSection(project: Project): string {
@@ -610,7 +725,7 @@ function scenariosSection(project: Project): string {
             .replace('Outlets passing', `${capital(many)} meeting requirement`)
             .replace('Outlets failing', `${capital(many)} below requirement`),
         )}</td>${r.values
-          .map((v) => `<td class="num">${v === null ? '–' : esc(v)}</td>`)
+          .map((v) => `<td class="num">${v === null ? '–' : esc(compareValue(r.label, v))}</td>`)
           .join('')}</tr>`,
     )
     .join('');
@@ -748,7 +863,7 @@ function designBasis(project: Project, results: SolveResults): BasisRow[] {
     if (pump.suctionLossM) extras.push(`suction loss ${pump.suctionLossM} m`);
     if (pump.waterLevelM) extras.push(`water level ${pump.waterLevelM} m relative to the pump`);
     const last = lastCurveFlow(pump);
-    if (results.ok && last !== null && results.system.pumpFlowLpm > last) extras.push(`extended in a straight line beyond ${last} LPM`);
+    if (results.ok && last !== null && results.system.pumpFlowLpm > last) extras.push(`extended in a straight line beyond ${num(last)} LPM`);
     add(pump.label, [curveText(pump), ...extras].join('; '), 'Project data');
   }
   return rows;
@@ -1000,6 +1115,7 @@ const styles = (pageHeader: string, footer: string) => `
   .kv th { width: 230px; padding: 3px 24px 3px 0; font-weight: 400; color: var(--muted); background: none; border-bottom: 1px solid var(--rule); vertical-align: top; }
   .basis td:first-child { white-space: normal; width: 24%; font-weight: 600; }
   .basis td:last-child { width: 32%; color: var(--muted); }
+  .formulas, .notation, .basis { break-inside: avoid; }
   .formulas td { padding: 5px 6px; vertical-align: middle; }
   .formulas td.num { width: 28px; color: var(--muted); }
   .formulas td:nth-child(2) { width: 34%; white-space: normal; }
@@ -1109,10 +1225,10 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
   const fastest = results.ok && results.pipes.length > 0 ? results.pipes.reduce((a, b) => (b.velocityMs > a.velocityMs ? b : a)) : null;
   const facts: [string, string, string][] = [];
   if (results.ok && project.pumps.length > 0) {
-    facts.push(['Pump duty', `${results.system.pumpFlowLpm.toFixed(0)} LPM`, `at ${results.system.pumpHeadM.toFixed(1)} m (${results.system.pumpPressureBar.toFixed(2)} bar)`]);
+    facts.push(['Pump operating point', `${num(results.system.pumpFlowLpm)} LPM`, `at ${results.system.pumpHeadM.toFixed(1)} m (${results.system.pumpPressureBar.toFixed(2)} bar)`]);
   }
   if (results.ok && critical && open.length > 0) {
-    facts.push([`Critical ${openNoun(1)}`, critical.label, `${fix(critical.pressureBar, 2)} bar, ${critical.outletFlowLpm.toFixed(0)} LPM`]);
+    facts.push([`Critical ${openNoun(1)}`, critical.label, `${fix(critical.pressureBar, 2)} bar, ${num(critical.outletFlowLpm)} LPM`]);
   }
   if (fastest && fastest.velocityMs > 0) {
     facts.push(['Highest velocity', `${fastest.velocityMs.toFixed(2)} m/s`, `in ${fastest.label}, limit ${project.settings.velocityLimitMs} m/s`]);
@@ -1126,7 +1242,7 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
         failing.length > 0
           ? `${esc(failing.map((n) => n.label).join(', '))} ${failing.length === 1 ? 'is' : 'are'} below the minimum.`
           : open.length === 1
-            ? `It meets the minimum residual pressure and flow, with ${fix(open[0].pressureBar, 2)} bar and ${open[0].outletFlowLpm.toFixed(0)} LPM.`
+            ? `It meets the minimum residual pressure and flow, with ${fix(open[0].pressureBar, 2)} bar and ${num(open[0].outletFlowLpm)} LPM.`
             : `All meet the minimum residual pressure and flow; the critical ${openNoun(1)} is ${esc(critical?.label ?? '')} at ${fix(critical?.pressureBar, 2)} bar.`
       }`,
     );
@@ -1158,7 +1274,7 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
     );
   }
   findings.push(
-    `<strong>Network:</strong> ${pipeLength.toFixed(0)} m of ${sizes} NB pipework with ${plural(totals.junctions, 'junction')}, ${plural(totals.tees, 'tee')} at junctions${totals.takeOffTees > 0 ? `, ${plural(totals.takeOffTees, 'outlet tee')}` : ''}${totals.crosses > 0 ? `, ${plural(totals.crosses, 'cross', 'crosses')}` : ''} and ${plural(totals.bends, 'bend')}.`,
+    `<strong>Network:</strong> ${num(pipeLength)} m of ${sizes} NB pipework with ${plural(totals.junctions, 'junction')}, ${plural(totals.tees, 'tee')} at junctions${totals.takeOffTees > 0 ? `, ${plural(totals.takeOffTees, 'outlet tee')}` : ''}${totals.crosses > 0 ? `, ${plural(totals.crosses, 'cross', 'crosses')}` : ''} and ${plural(totals.bends, 'bend')}.`,
   );
 
   const issues = results.issues.filter((i) => i.severity === 'error' || i.severity === 'warning');
@@ -1168,11 +1284,19 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
 
   add(
     'summary',
-    'Summary',
+    'Executive summary',
     `${verdict}<div class="facts">${facts
       .map(([label, value, note]) => `<div class="fact"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note ? `<small>${esc(note)}</small>` : ''}</div>`)
       .join('')}</div><ul class="findings">${findings.map((f) => `<li>${f}</li>`).join('')}</ul>${issueHtml}`,
   );
+
+  const includeScenarios = project.scenarios.length > 0 && details.includeScenarios;
+  add(
+    'introduction',
+    'Introduction',
+    introductionSection(project, details, open.map((n) => n.label), requirement, capacity !== null, includeScenarios),
+  );
+  add('basis', 'Design basis', basisTable(designBasis(project, results)));
 
   add(
     'layout',
@@ -1201,14 +1325,22 @@ export function buildReportHtml({ project, results, capacity, generatedAt }: Rep
   if (charts.length > 0) add('charts', 'Performance charts', charts.join('\n'));
 
   if (requirement.length > 0) {
-    add('requirement', `Each ${outletNoun(requirement.map((r) => r.kind), 1)} flowing alone`, requirementSection(requirement));
+    add('requirement', `Individual ${outletNoun(requirement.map((r) => r.kind), 1)} check`, requirementSection(requirement));
   }
   if (capacity) add('capacity', 'Simultaneous operation', capacitySection(capacity));
-  if (project.scenarios.length > 0 && details.includeScenarios) add('scenarios', 'Operating scenarios', scenariosSection(project));
-  add('basis', 'Design basis', basisTable(designBasis(project, results)));
+  if (includeScenarios) add('scenarios', 'Operating scenarios', scenariosSection(project));
   add('method', 'Method, assumptions and limitations', methodSection(project, results, details.client.trim()));
 
-  const date = generatedAt.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  // Cross-references such as "Section {{section:basis}}" take the final numbering.
+  // A reference to a section the report leaves out is dropped with its brackets.
+  const numbers = new Map(sections.map((s, i) => [s.id, String(i + 1)]));
+  for (const s of sections) {
+    s.body = s.body
+      .replace(/ \(Section \{\{section:(\w+)\}\}\)/g, (_, id: string) => (numbers.has(id) ? ` (Section ${numbers.get(id)})` : ''))
+      .replace(/\{\{section:(\w+)\}\}/g, (_, id: string) => numbers.get(id) ?? '–');
+  }
+
+  const date = generatedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const text = (v: string) => v.trim();
   const revision = text(details.revision);
   // Only what has been entered, so a report with no details shows just the date.

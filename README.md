@@ -1,4 +1,4 @@
-# Fire Hydrant Network Simulator
+# TRIVIONIX Fire Hydrant Network Analysis
 
 Draw a yard hydrant pipe network in the browser, run a steady-state hydraulic analysis, and see the flow and pressure at every point. It answers three questions:
 
@@ -45,7 +45,7 @@ Wheel zooms. Middle-drag or Space-drag pans. Ctrl+Z and Ctrl+Y undo and redo.
 
 **Tracing a CAD drawing:** on the right-hand panel with nothing selected, use *Import image or PDF*, then *Calibrate scale*. Click two points and type the real distance. Pipe lengths then follow the drawing unless you type one in.
 
-**Analysis tabs:** Manual (toggles and baseline delta), Nodes, Pipes, Hydrants, Critical path, Charts, Requirement check, Capacity, Scenarios, Assumptions. The *Report* button opens a printable report written for the client: summary, drawing, network inventory (junction schedule, tees, bends, end caps and pipe lengths read from the drawing), inputs, results and design basis. A capacity search or scenario comparison appears only once it has been run or saved, and sections are numbered from what is included. Its design basis lists only what the network uses, and it closes with the method, formulas, assumptions and limitations of the study. The report is issued under the TRIVIONIX letterhead (set in `src/report/company.ts`) with the date of issue. Clicking *Report* first asks for an optional client, site, document number and revision, left off the report when blank, and whether to include the operating scenarios; these are saved with the project.
+**Analysis tabs:** Operation (switch hydrants on and off, baseline delta), Nodes, Pipes, Hydrants, Critical path, Charts, Individual check (each hydrant flowing on its own), Capacity, Scenarios, Assumptions. *Example* opens a worked yard ring main. The *Report* button opens a printable report written for the client: executive summary, introduction, design basis, drawing, network inventory (junction schedule, tees, bends, end caps and pipe lengths read from the drawing), inputs, results and design basis. A capacity search or scenario comparison appears only once it has been run or saved, and sections are numbered from what is included. Its design basis lists only what the network uses, and it closes with the method, formulas, assumptions and limitations of the study. The report is issued under the TRIVIONIX letterhead (set in `src/report/company.ts`) with the date of issue. Clicking *Report* first asks for an optional client, site, document number and revision, left off the report when blank, and whether to include the operating scenarios; these are saved with the project.
 
 **Tees and bends from the drawing:** with *Tees and bends from the drawing* on (Project panel, Solver), every junction is read from the drawing: three pipes make a tee, four a cross, two at an angle a bend, two sizes in line a reducer, and a hydrant on the main a branch tee. Their losses are added without typing them in: tee branch loss on the branch pipe, tee run loss on one run pipe, bends and reducers on the smaller pipe. The pipe panel lists them under *From the drawing*; add by hand only what the drawing does not show, such as bends on a riser. New projects start with it on. Files saved before it existed open with it off, so their results do not change; switching it on offers to remove hand-entered tees and elbows so they are not counted twice.
 
@@ -137,14 +137,14 @@ The Assumptions tab lists every value used, its source, and any override. The ch
 | Simple loop against a hand Hardy-Cross solution | Closure below 0.01 m |
 | Emitter at known pressure | `Q = K√P` within 0.5 % |
 | Pump curve on a single pipe | `H_pump(Q) = losses + residual` |
-| Reference project, 2850 LPM at farthest hydrant | About 20.8 m loss, 8.74 bar |
+| Example project, 2850 LPM at farthest hydrant | About 20.8 m loss, 8.74 bar |
 
 ## Project layout
 
 ```
 src/solver     Hydraulic engine: pure TypeScript, no UI imports
 src/model      Types, JSON schema, defaults, tables, editing, seed project
-src/analysis   Requirement check, capacity search and worker, scenarios
+src/analysis   Individual hydrant check, capacity search and worker, scenarios
 src/canvas     SVG drawing surface, legend, background import, calibration
 src/panels     Properties, results tables, charts, analysis tabs
 src/report     Assumptions list, drawing snapshot, printable report
